@@ -13,6 +13,7 @@ class DataSyncService {
     var shapes: [Shape] = []
     var trips: [Trip] = []
     var stops: [Stop] = []
+    var routeServiceHours: [RouteServiceHours] = []
     
     // Performance optimization: Trip lookup dictionary
     private var tripLookup: [String: String] = [:]
@@ -70,6 +71,7 @@ class DataSyncService {
         shapes = staticDataService.loadShapes()
         trips = staticDataService.loadTrips()
         stops = staticDataService.loadStops()
+        routeServiceHours = staticDataService.loadRouteServiceHours()
         
         let stopTimesData = staticDataService.loadStopTimes()
         
@@ -155,29 +157,23 @@ class DataSyncService {
     }
     
     /// Start automatic refresh cycle
-    /// Initial fetch runs in background without blocking, allowing UI to proceed immediately
+    /// Initial fetch runs in background without blocking initialization, then periodic refreshes continue
     func startAutoRefresh() {
         // Cancel existing task if any
         refreshTask?.cancel()
         
-        // Initial fetch - fire and forget, don't await
+        // Start initial fetch in background task (non-blocking)
         // This allows the UI to proceed immediately after static data loads
-        // The map will appear with routes/shapes, and buses will appear when network request completes
-        // Use structured concurrency: create task but don't await it
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            await self.refresh()
+        Task { [weak self] in
+            await self?.refresh()
         }
         
-        // Start periodic refresh task
+        // Start periodic refresh loop in separate task
         refreshTask = Task { [weak self] in
             guard let self = self else { return }
             
-            // Wait for refresh interval before first periodic fetch to avoid duplicate requests
-            // This gives the initial fetch time to complete before starting periodic refreshes
-            try? await Task.sleep(for: .seconds(self.refreshInterval))
-            
-            // Periodic refresh loop
+            // Wait for initial delay before first periodic refresh
+            // This gives the initial fetch time to complete
             while !Task.isCancelled {
                 let delay = self.isOffline ? self.retryDelay : self.refreshInterval
                 try? await Task.sleep(for: .seconds(delay))

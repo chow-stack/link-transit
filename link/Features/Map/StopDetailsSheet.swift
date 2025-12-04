@@ -92,7 +92,8 @@ struct StopDetailsSheet: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(3)
+                .minimumScaleFactor(0.8)
                 .padding(.top, 8)
             
             // Horizontal scrolling routes
@@ -154,7 +155,7 @@ struct StopDetailsSheet: View {
             Spacer()
             Spacer()
         }
-        .padding(.horizontal, 40)
+        .padding(.horizontal, min(40, UIScreen.main.bounds.width * 0.1))
     }
 }
 

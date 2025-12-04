@@ -26,15 +26,20 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.requestWhenInUseAuthorization()
     }
     
-    /// Start updating user location
+    /// Start updating user location and heading
     func startUpdatingLocation() {
         guard isAuthorized else { return }
         manager.startUpdatingLocation()
+        // Enable heading updates to show direction cone on map
+        if CLLocationManager.headingAvailable() {
+            manager.startUpdatingHeading()
+        }
     }
     
-    /// Stop updating user location
+    /// Stop updating user location and heading
     func stopUpdatingLocation() {
         manager.stopUpdatingLocation()
+        manager.stopUpdatingHeading()
     }
     
     // MARK: - CLLocationManagerDelegate
@@ -44,6 +49,8 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         
         if isAuthorized {
             startUpdatingLocation()
+        } else {
+            stopUpdatingLocation()
         }
     }
     
@@ -54,6 +61,13 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error: \(error.localizedDescription)")
+    }
+    
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        // Validate heading accuracy - only process headings with valid accuracy
+        // SwiftUI Map's UserAnnotation will automatically use this heading data for the cone
+        guard newHeading.headingAccuracy >= 0 else { return }
+        // Heading data is valid - MapKit will automatically display the cone
     }
 }
 

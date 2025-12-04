@@ -123,23 +123,33 @@ class MapViewModel {
         return await viewModel.getBusInfo(for: bus)
     }
     
-    /// Check if no buses are active (considering filters)
+    /// Check if no buses are active (NOT considering filters)
+    /// This distinguishes between "no buses running" vs "all routes filtered out"
+    /// We check the actual vehicle count from dataSyncService, not filtered enrichedVehicles,
+    /// to ensure we only show NoBusesView when there are truly no buses,
+    /// not when all routes are just filtered out
     var hasNoBuses: Bool {
-        enrichedVehicles.isEmpty && lastUpdated != nil && !isOffline
+        vehicles.isEmpty && lastUpdated != nil && !isOffline
     }
     
     /// Get filtered route counts for status bar display
-    /// Format: selected routes / total routes active (or total favorited routes in favorites mode)
+    /// Format: selected active routes / total active routes (or total favorited active routes in favorites mode)
+    /// Only counts routes that currently have active buses
     var filteredRouteCounts: (active: Int, total: Int) {
+        let activeRouteIds = getActiveRouteIds()
+        
         if favoriteStore.showFavoritesOnly {
             // When favorites-only is active, show counts for favorited routes only
             let favoritedRouteIds = Set(favoriteStore.routeFavorites.map { $0.itemId })
-            let activeFavoritedRoutes = favoritedRouteIds.intersection(filterStore.enabledRouteIds)
-            return (active: activeFavoritedRoutes.count, total: favoritedRouteIds.count)
+            // Only count favorited routes that are both enabled AND active
+            let activeFavoritedEnabledRoutes = favoritedRouteIds.intersection(filterStore.enabledRouteIds).intersection(activeRouteIds)
+            // Only count favorited routes that are active
+            let activeFavoritedRoutes = favoritedRouteIds.intersection(activeRouteIds)
+            return (active: activeFavoritedEnabledRoutes.count, total: activeFavoritedRoutes.count)
         } else {
-            // Normal filtering: show selected routes / total routes with active buses
-            let activeRouteIds = getActiveRouteIds()
-            return (active: filterStore.activeRouteCount, total: activeRouteIds.count)
+            // Only count enabled routes that are active
+            let activeEnabledRoutes = filterStore.enabledRouteIds.intersection(activeRouteIds)
+            return (active: activeEnabledRoutes.count, total: activeRouteIds.count)
         }
     }
     
@@ -240,4 +250,3 @@ struct StopWithColor: Identifiable {
     var name: String { stop.name }
     var coordinate: CLLocationCoordinate2D { stop.coordinate }
 }
-

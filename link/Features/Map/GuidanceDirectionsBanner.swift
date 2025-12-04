@@ -10,8 +10,14 @@ struct GuidanceDirectionsBanner: View {
     @State private var dragOffset: CGFloat = 0
     @State private var lastDragValue: CGFloat = 0
     
-    private let collapsedHeight: CGFloat = 70
-    private let expandedHeight: CGFloat = 400
+    // Adaptive heights based on screen size
+    private var collapsedHeight: CGFloat {
+        min(70, UIScreen.main.bounds.height * 0.1)
+    }
+    
+    private var expandedHeight: CGFloat {
+        min(400, UIScreen.main.bounds.height * 0.6)
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -63,12 +69,14 @@ struct GuidanceDirectionsBanner: View {
                     Text(currentStepTitle)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                     if let subtitle = currentStepSubtitle {
                         Text(subtitle)
                             .font(.system(size: 13, weight: .regular))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                 }
                 

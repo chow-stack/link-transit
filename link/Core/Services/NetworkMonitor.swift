@@ -22,7 +22,7 @@ class NetworkMonitor {
     private(set) var connectionType: NWInterface.InterfaceType?
     
     private let monitor: NWPathMonitor
-    private let queue = DispatchQueue(label: "com.bloombus.networkmonitor")
+    private let queue = DispatchQueue(label: "com.link.networkmonitor")
     
     private init() {
         monitor = NWPathMonitor()
@@ -34,7 +34,6 @@ class NetworkMonitor {
     /// Start monitoring network path changes
     func startMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
-            let status = path.status
             let isExpensive = path.isExpensive
             let isConstrained = path.isConstrained
             let usesWifi = path.usesInterfaceType(.wifi)
@@ -48,7 +47,7 @@ class NetworkMonitor {
                 guard let self = self else { return }
                 
                 let wasConnected = self.isConnected
-                self.isConnected = status == .satisfied
+                self.isConnected = path.status == .satisfied
                 self.isExpensive = isExpensive
                 self.isConstrained = isConstrained
                 

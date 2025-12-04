@@ -60,4 +60,8 @@ final class StaticDataService {
     func loadStopTimes() -> StopTimesData {
         loadStopTimesData("stop_times_optimized")
     }
+    
+    func loadRouteServiceHours() -> [RouteServiceHours] {
+        loadJSON("route_service_hours")
+    }
 }

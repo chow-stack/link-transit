@@ -76,7 +76,35 @@ class NotificationService {
         authorizationStatus = settings.authorizationStatus
     }
     
-    /// Request notification permission
+    /// Request notification permission if not determined (first launch)
+    /// This should be called on app launch to request permission on first use
+    func requestPermissionIfNeeded() async {
+        // Check current status first
+        await checkAuthorizationStatus()
+        
+        // Only request if status is not determined (first launch)
+        guard authorizationStatus == .notDetermined else {
+            print("ℹ️ Notification permission already determined: \(authorizationStatus.rawValue)")
+            return
+        }
+        
+        // Request permission
+        do {
+            let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
+            await checkAuthorizationStatus()
+            
+            if granted {
+                notificationsEnabled = true
+                print("✅ Notification permission granted on first launch")
+            } else {
+                print("⚠️ Notification permission denied on first launch")
+            }
+        } catch {
+            print("❌ Failed to request notification permission: \(error)")
+        }
+    }
+    
+    /// Request notification permission (can be called from UI)
     func requestPermission() async -> Bool {
         do {
             let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])

@@ -4,6 +4,7 @@ import SwiftUI
 struct MainContainerView: View {
     @State private var selectedTab: MainTab = .map
     @State private var showingFilterSheet = false
+    @State private var showingBookingSheet = false
     @State private var mapNavigationService = MapNavigationService()
     @State private var tripPlannerViewModel: TripPlannerViewModel?
     
@@ -48,7 +49,8 @@ struct MainContainerView: View {
             VStack {
                 Spacer()
                 BottomNavBar(
-                    selectedTab: $selectedTab
+                    selectedTab: $selectedTab,
+                    showingBookingSheet: $showingBookingSheet
                 )
             }
         }
@@ -58,12 +60,18 @@ struct MainContainerView: View {
                 selectedTab = .map
             }
         }
+        .sheet(isPresented: $showingBookingSheet) {
+            if let url = URL(string: "https://book.blink.rideco.com/home/booking/search") {
+                SafariView(url: url)
+            }
+        }
     }
 }
 
 /// Bottom navigation bar component
 struct BottomNavBar: View {
     @Binding var selectedTab: MainContainerView.MainTab
+    @Binding var showingBookingSheet: Bool
     @Environment(NotificationService.self) private var notificationService
     
     var body: some View {
@@ -101,6 +109,15 @@ struct BottomNavBar: View {
                     isSelected: selectedTab == .notifications,
                     action: { selectedTab = .notifications },
                     badgeCount: notificationService.getNotificationPreferences().isEmpty ? nil : notificationService.getNotificationPreferences().count
+                )
+                
+                // Car icon (Micro-Transit)
+                bottomBarButton(
+                    icon: "car.fill",
+                    label: "MicroTransit",
+                    color: Color("PrimaryAccent"),
+                    isSelected: false,
+                    action: { showingBookingSheet = true }
                 )
                 
                 // Settings icon

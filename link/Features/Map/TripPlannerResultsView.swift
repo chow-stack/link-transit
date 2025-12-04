@@ -52,7 +52,7 @@ struct TripPlannerResultsView: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, min(32, UIScreen.main.bounds.width * 0.08))
                 .accessibilityLabel("Error: \(message)")
             
             Button(action: {
@@ -92,7 +92,7 @@ struct TripPlannerResultsView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, min(32, UIScreen.main.bounds.width * 0.08))
                 .accessibilityLabel("No routes found. Try adjusting your search time or destination")
         }
     }

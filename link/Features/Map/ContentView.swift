@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var showingBusInfo = false
     @State private var isLoading = true
     @State private var hasInitialized = false
+    @State private var loadingPhase: AppLoadingPhase = .loadingRoutes
     
     // Trip planner state
     @State private var tripOrigin: PlannedLocation?
@@ -42,13 +43,20 @@ struct ContentView: View {
                     // No connection and no cached data - show connection message
                     noConnectionView
                 } else {
-                    // Normal loading - show spinner
-                    SimpleLoadingView()
+                    // Use dynamic loading for first-time app launches
+                    AppLaunchLoadingView(phase: loadingPhase)
                         .transition(.opacity)
                 }
             } else {
-                // Main map view
-                mapContent
+                // Show no buses view or map content
+                // Always show mapContent when buses exist (even if filtered),
+                // so users can access the filter button to reselect routes
+                if viewModel?.hasNoBuses == true {
+                    NoBusesView()
+                        .transition(.opacity)
+                } else {
+                    mapContent
+                }
             }
         }
         .animation(.easeInOut(duration: 0.3), value: isLoading)
@@ -81,6 +89,19 @@ struct ContentView: View {
             // When switching to map tab, check for pending navigation
             if newValue == .map {
                 checkPendingNavigation()
+                
+                // When returning to map tab, ensure guidance state is preserved
+                if let vm = tripPlannerViewModel, vm.isGuidanceMode {
+                    // Restart guidance refresh task
+                    vm.startGuidanceRefresh()
+                    
+                    // Update overlays to reflect current state
+                    Task {
+                        if let itinerary = vm.selectedItinerary ?? vm.itineraries.first {
+                            await prepareGuidance(for: itinerary)
+                        }
+                    }
+                }
             }
         }
         .onChange(of: isLoading) { oldValue, newValue in
@@ -89,8 +110,8 @@ struct ContentView: View {
                 checkPendingNavigation()
             }
         }
-        .task(id: hasInitialized) {
-            // Only run initialization once using .task(id:) to control execution
+        .task {
+            // Only run initialization once
             guard !hasInitialized else { return }
             await loadDataWithPhases()
             hasInitialized = true
@@ -102,29 +123,15 @@ struct ContentView: View {
             // When connection is restored, automatically retry if we were stuck
             if newValue && !oldValue {
                 // Connection just restored
-                if isLoading && dataSyncService.routes.isEmpty {
-                    // We were stuck on loading - retry now
+                if isLoading && dataSyncService.routes.isEmpty && !hasInitialized {
+                    // Only retry if we haven't initialized yet
                     Task {
                         await loadDataWithPhases()
                     }
                 } else if !isLoading {
-                    // App is running - refresh realtime data
+                    // App is running - refresh realtime data only
                     Task {
                         await viewModel?.refresh()
-                    }
-                }
-            }
-        }
-        .onChange(of: selectedTab) { oldValue, newValue in
-            // When returning to map tab, ensure guidance state is preserved
-            if newValue == .map, let vm = tripPlannerViewModel, vm.isGuidanceMode {
-                // Restart guidance refresh task
-                vm.startGuidanceRefresh()
-                
-                // Update overlays to reflect current state
-                Task {
-                    if let itinerary = vm.selectedItinerary ?? vm.itineraries.first {
-                        await prepareGuidance(for: itinerary)
                     }
                 }
             }
@@ -218,6 +225,7 @@ struct ContentView: View {
                             BusAnnotationView(
                                 routeShortName: vehicle.routeShortName,
                                 routeColor: vehicle.routeColor,
+                                heading: vehicle.vehicle.heading,
                                 onTap: {
                                     self.navigateToBus(vehicle)
                                 }
@@ -245,6 +253,7 @@ struct ContentView: View {
                             BusAnnotationView(
                                 routeShortName: vehicle.routeShortName,
                                 routeColor: vehicle.routeColor,
+                                heading: vehicle.vehicle.heading,
                                 onTap: {
                                     self.navigateToBus(vehicle)
                                 }
@@ -284,6 +293,7 @@ struct ContentView: View {
                                 BusAnnotationView(
                                     routeShortName: vehicle.routeShortName,
                                     routeColor: vehicle.routeColor,
+                                    heading: vehicle.vehicle.heading,
                                     onTap: {
                                         self.navigateToBus(vehicle)
                                     }
@@ -340,8 +350,12 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 // Spacer for bottom nav bar (handled by MainContainerView)
-                Spacer()
-                    .frame(height: 60)
+                // Bottom nav bar is 60px + safe area bottom inset
+                GeometryReader { geometry in
+                    Spacer()
+                        .frame(height: 60 + geometry.safeAreaInsets.bottom)
+                }
+                .frame(height: 60)
             }
             .overlay(alignment: .top) {
                 // Network status banner (above alerts banner)
@@ -420,9 +434,10 @@ struct ContentView: View {
                 offlineIndicator
             }
             
-            // No buses indicator
-            if viewModel?.hasNoBuses == true {
-                noBusesIndicator
+            // All routes filtered message
+            // Show when buses exist but all routes are filtered out
+            if shouldShowFilteredRoutesMessage {
+                allRoutesFilteredMessage
             }
         }
         .task {
@@ -430,12 +445,74 @@ struct ContentView: View {
         }
     }
     
+    /// Check if we should show the "all routes filtered" message
+    private var shouldShowFilteredRoutesMessage: Bool {
+        guard let viewModel = viewModel else { return false }
+        // Show message when:
+        // 1. There are actual buses running (unfiltered)
+        // 2. But no filtered vehicles are shown (all routes deselected)
+        // 3. And not all routes are selected (filters are active)
+        return !dataSyncService.vehicles.isEmpty &&
+               viewModel.enrichedVehicles.isEmpty &&
+               !viewModel.allFilteredRoutesSelected
+    }
+    
+    /// Message shown when all routes are filtered out
+    private var allRoutesFilteredMessage: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            
+            VStack(spacing: 6) {
+                Text("All Routes Filtered")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
+                
+                Text("Select routes to view buses")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            
+            Button {
+                showingFilterSheet = true
+            } label: {
+                Text("Filter Routes")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule()
+                            .fill(Color("PrimaryAccent"))
+                    )
+            }
+            .padding(.top, 4)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.1), radius: 12, x: 0, y: 6)
+        )
+        .padding(.horizontal, 40)
+    }
+    
     // MARK: - Data Loading
     
-    /// Load data optimized for speed
+    /// Load data optimized for speed with progress feedback
     /// Idempotent: services check their own initialization state, so this runs quickly if already initialized
     /// Dismisses loading screen immediately after static data loads, allowing UI to proceed while realtime data and other services initialize in background
     private func loadDataWithPhases() async {
+        // Add timeout to ensure loading always dismisses (safety mechanism)
+        let timeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            if isLoading {
+                print("⚠️ Force dismissing loading screen after timeout")
+                isLoading = false
+            }
+        }
+        
         // Check network status and static data availability immediately
         let hasConnection = networkMonitor.isConnected
         let hasStaticData = !dataSyncService.routes.isEmpty
@@ -446,6 +523,7 @@ struct ContentView: View {
         if !hasConnection && !hasStaticData {
             // Don't proceed - user sees noConnectionView
             // The view will automatically retry when connection is restored
+            timeoutTask.cancel()
             return
         }
         
@@ -453,6 +531,20 @@ struct ContentView: View {
         // If routes are already loaded, skip loading screen
         let dataAlreadyLoaded = !dataSyncService.routes.isEmpty
         
+        // Phase 1: Loading routes
+        loadingPhase = .loadingRoutes
+        
+        // Initialize data sync FIRST (loads static data only - realtime runs in background)
+        // DataSyncService will skip if already initialized
+        guard let vm = viewModel else {
+            // If no viewModel, ensure loading screen dismisses
+            isLoading = false
+            timeoutTask.cancel()
+            return
+        }
+        await vm.initialize()
+        
+        // Initialize stores with loaded routes
         // Initialize critical services in parallel (needed for map to display)
         // Services will skip if already initialized
         // Capture modelContext to avoid Sendable warnings
@@ -466,23 +558,26 @@ struct ContentView: View {
             }
         }
         
-        // Initialize data sync (loads static data only - realtime runs in background)
-        // DataSyncService will skip if already initialized
-        guard let vm = viewModel else { return }
-        await vm.initialize()
+        // Phase 2: Fetching buses (non-blocking, just visual feedback)
+        // GTFS-RT data is already fetching in background, this is just for user feedback
+        loadingPhase = .fetchingBuses
+        try? await Task.sleep(for: .milliseconds(300))
         
-        // At this point, static data is loaded and realtime fetch is running in background
-        // Dismiss loading screen immediately - don't wait for realtime data or non-critical services
+        // Phase 3: Complete
+        loadingPhase = .complete
         
-        // Ensure minimum loading visibility for first load
+        // Show completion briefly before dismissing
         if !dataAlreadyLoaded {
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: .milliseconds(400))
         }
         
-        // Transition to map view - static data is ready, realtime will update when available
+        // Always dismiss loading screen - static data is ready, realtime will update when available
         withAnimation(.easeInOut(duration: 0.25)) {
             isLoading = false
         }
+        
+        // Cancel timeout since we dismissed normally
+        timeoutTask.cancel()
         
         // Initialize non-critical services in background after loading screen dismisses
         // These don't block the UI and can complete asynchronously
@@ -629,7 +724,7 @@ struct ContentView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, min(40, UIScreen.main.bounds.width * 0.1))
             }
             
             // Retry button
@@ -654,40 +749,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color("Background"))
         .transition(.opacity)
-    }
-    
-    /// No buses indicator
-    private var noBusesIndicator: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            
-            VStack(spacing: 12) {
-                Image(systemName: "bus.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                
-                VStack(spacing: 4) {
-                    Text("No Buses Active")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    
-                    Text("Buses may not be running at this time")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(24)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.1), radius: 12, x: 0, y: 6)
-            )
-            .padding(.horizontal, 40)
-            
-            Spacer()
-            Spacer()
-        }
     }
     
     // MARK: - Helper Methods

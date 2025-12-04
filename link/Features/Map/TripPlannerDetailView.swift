@@ -139,42 +139,44 @@ struct TripPlannerDetailView: View {
     // MARK: - Map Section
     
     private var mapSection: some View {
-        Map(position: $mapCameraPosition) {
-            // Origin marker
-            if let origin = viewModel.origin {
-                Annotation("Origin", coordinate: origin.coordinate) {
-                    OriginDestinationMarker(isOrigin: true)
+        GeometryReader { geometry in
+            Map(position: $mapCameraPosition) {
+                // Origin marker
+                if let origin = viewModel.origin {
+                    Annotation("Origin", coordinate: origin.coordinate) {
+                        OriginDestinationMarker(isOrigin: true)
+                    }
+                }
+                
+                // Destination marker
+                if let destination = viewModel.destination {
+                    Annotation("Destination", coordinate: destination.coordinate) {
+                        OriginDestinationMarker(isOrigin: false)
+                    }
+                }
+                
+                // Walking polylines (dashed)
+                ForEach(Array(formattedItinerary.mapAnnotations.walkPolylines.enumerated()), id: \.offset) { _, polyline in
+                    MapPolyline(coordinates: polyline.coordinates)
+                        .stroke(.gray, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [10, 5]))
+                }
+                
+                // Bus polylines (solid with route color)
+                ForEach(Array(formattedItinerary.mapAnnotations.ridePolylines.enumerated()), id: \.offset) { _, polyline in
+                    MapPolyline(coordinates: polyline.coordinates)
+                        .stroke(polyline.color, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                }
+                
+                // Stop markers
+                ForEach(formattedItinerary.mapAnnotations.stopMarkers) { marker in
+                    Annotation(marker.stopName, coordinate: marker.coordinate) {
+                        StopMarkerView(marker: marker)
+                    }
                 }
             }
-            
-            // Destination marker
-            if let destination = viewModel.destination {
-                Annotation("Destination", coordinate: destination.coordinate) {
-                    OriginDestinationMarker(isOrigin: false)
-                }
-            }
-            
-            // Walking polylines (dashed)
-            ForEach(Array(formattedItinerary.mapAnnotations.walkPolylines.enumerated()), id: \.offset) { _, polyline in
-                MapPolyline(coordinates: polyline.coordinates)
-                    .stroke(.gray, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [10, 5]))
-            }
-            
-            // Bus polylines (solid with route color)
-            ForEach(Array(formattedItinerary.mapAnnotations.ridePolylines.enumerated()), id: \.offset) { _, polyline in
-                MapPolyline(coordinates: polyline.coordinates)
-                    .stroke(polyline.color, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-            }
-            
-            // Stop markers
-            ForEach(formattedItinerary.mapAnnotations.stopMarkers) { marker in
-                Annotation(marker.stopName, coordinate: marker.coordinate) {
-                    StopMarkerView(marker: marker)
-                }
-            }
+            .disabled(true) // Disable interaction - just for display
         }
-        .frame(height: 250)
-        .disabled(true) // Disable interaction - just for display
+        .frame(height: min(250, UIScreen.main.bounds.height * 0.3))
     }
     
     // MARK: - Instructions Section

@@ -1,0 +1,183 @@
+[
+  {
+    "route_id": "1",
+    "service_hours": {
+      "monday": { "start": "06:30", "end": "21:35" },
+      "tuesday": { "start": "06:30", "end": "21:35" },
+      "wednesday": { "start": "06:30", "end": "21:35" },
+      "thursday": { "start": "06:30", "end": "21:35" },
+      "friday": { "start": "06:30", "end": "21:35" },
+      "saturday": { "start": "07:30", "end": "18:35" },
+      "sunday": null
+    }
+  },
+  {
+    "route_id": "2S",
+    "service_hours": {
+      "monday": { "start": "06:21", "end": "21:04" },
+      "tuesday": { "start": "06:21", "end": "21:04" },
+      "wednesday": { "start": "06:21", "end": "21:04" },
+      "thursday": { "start": "06:21", "end": "21:04" },
+      "friday": { "start": "06:21", "end": "21:04" },
+      "saturday": { "start": "07:51", "end": "18:51" },
+      "sunday": { "start": "08:51", "end": "16:04" }
+    }
+  },
+  {
+    "route_id": "2W",
+    "service_hours": {
+      "monday": { "start": "06:19", "end": "21:28" },
+      "tuesday": { "start": "06:19", "end": "21:28" },
+      "wednesday": { "start": "06:19", "end": "21:28" },
+      "thursday": { "start": "06:19", "end": "21:28" },
+      "friday": { "start": "06:19", "end": "21:28" },
+      "saturday": { "start": "08:10", "end": "18:36" },
+      "sunday": { "start": "09:10", "end": "16:28" }
+    }
+  },
+  {
+    "route_id": "3E",
+    "service_hours": {
+      "monday": { "start": "06:28", "end": "21:33" },
+      "tuesday": { "start": "06:28", "end": "21:33" },
+      "wednesday": { "start": "06:28", "end": "21:33" },
+      "thursday": { "start": "06:28", "end": "21:33" },
+      "friday": { "start": "06:28", "end": "21:33" },
+      "saturday": { "start": "07:28", "end": "18:59" },
+      "sunday": { "start": "08:33", "end": "16:51" }
+    }
+  },
+  {
+    "route_id": "3W",
+    "service_hours": {
+      "monday": { "start": "06:02", "end": "21:32" },
+      "tuesday": { "start": "06:02", "end": "21:32" },
+      "wednesday": { "start": "06:02", "end": "21:32" },
+      "thursday": { "start": "06:02", "end": "21:32" },
+      "friday": { "start": "06:02", "end": "21:32" },
+      "saturday": { "start": "07:32", "end": "19:01" },
+      "sunday": { "start": "08:32", "end": "17:01" }
+    }
+  },
+  {
+    "route_id": "4S",
+    "service_hours": {
+      "monday": { "start": "06:35", "end": "21:35" },
+      "tuesday": { "start": "06:35", "end": "21:35" },
+      "wednesday": { "start": "06:35", "end": "21:35" },
+      "thursday": { "start": "06:35", "end": "21:35" },
+      "friday": { "start": "06:35", "end": "21:35" },
+      "saturday": { "start": "08:10", "end": "18:35" },
+      "sunday": null
+    }
+  },
+  {
+    "route_id": "4W",
+    "service_hours": {
+      "monday": { "start": "06:35", "end": "21:50" },
+      "tuesday": { "start": "06:35", "end": "21:50" },
+      "wednesday": { "start": "06:35", "end": "21:50" },
+      "thursday": { "start": "06:35", "end": "21:50" },
+      "friday": { "start": "06:35", "end": "21:50" },
+      "saturday": { "start": "08:10", "end": "18:50" },
+      "sunday": null
+    }
+  },
+  {
+    "route_id": "5",
+    "service_hours": {
+      "monday": { "start": "07:10", "end": "21:00" },
+      "tuesday": { "start": "07:10", "end": "21:00" },
+      "wednesday": { "start": "07:10", "end": "21:00" },
+      "thursday": { "start": "07:10", "end": "21:00" },
+      "friday": { "start": "07:10", "end": "21:00" },
+      "saturday": { "start": "08:10", "end": "19:00" },
+      "sunday": null
+    }
+  },
+  {
+    "route_id": "6",
+    "service_hours": {
+      "monday": { "start": "07:10", "end": "22:46" },
+      "tuesday": { "start": "07:10", "end": "22:46" },
+      "wednesday": { "start": "07:10", "end": "22:46" },
+      "thursday": { "start": "07:10", "end": "22:46" },
+      "friday": { "start": "07:10", "end": "22:46" },
+      "saturday": { "start": "07:30", "end": "18:40" },
+      "sunday": { "start": "10:10", "end": "18:40" }
+    }
+  },
+  {
+    "route_id": "7",
+    "service_hours": {
+      "monday": { "start": "06:25", "end": "21:30" },
+      "tuesday": { "start": "06:25", "end": "21:30" },
+      "wednesday": { "start": "06:25", "end": "21:30" },
+      "thursday": { "start": "06:25", "end": "21:30" },
+      "friday": { "start": "06:25", "end": "21:30" },
+      "saturday": { "start": "07:25", "end": "18:30" },
+      "sunday": { "start": "08:25", "end": "16:30" }
+    }
+  },
+  {
+    "route_id": "9",
+    "service_hours": {
+      "monday": { "start": "07:15", "end": "22:20" },
+      "tuesday": { "start": "07:15", "end": "22:20" },
+      "wednesday": { "start": "07:15", "end": "22:20" },
+      "thursday": { "start": "07:15", "end": "22:20" },
+      "friday": { "start": "07:15", "end": "22:20" },
+      "saturday": { "start": "09:30", "end": "21:25" },
+      "sunday": { "start": "10:30", "end": "19:20" }
+    }
+  },
+  {
+    "route_id": "11",
+    "service_hours": {
+      "monday": { "start": "07:00", "end": "22:10" },
+      "tuesday": { "start": "07:00", "end": "22:10" },
+      "wednesday": { "start": "07:00", "end": "22:10" },
+      "thursday": { "start": "07:00", "end": "22:10" },
+      "friday": { "start": "07:00", "end": "22:10" },
+      "saturday": { "start": "10:00", "end": "17:50" },
+      "sunday": { "start": "10:00", "end": "17:50" }
+    }
+  },
+  {
+    "route_id": "12",
+    "service_hours": {
+      "monday": { "start": "07:00", "end": "18:52" },
+      "tuesday": { "start": "07:00", "end": "18:52" },
+      "wednesday": { "start": "07:00", "end": "18:52" },
+      "thursday": { "start": "07:00", "end": "18:52" },
+      "friday": { "start": "07:00", "end": "17:42" },
+      "saturday": null,
+      "sunday": null
+    }
+  },
+  {
+    "route_id": "13",
+    "service_hours": {
+      "monday": { "start": "06:35", "end": "18:35" },
+      "tuesday": { "start": "06:35", "end": "18:35" },
+      "wednesday": { "start": "06:35", "end": "18:35" },
+      "thursday": { "start": "06:35", "end": "18:35" },
+      "friday": { "start": "06:35", "end": "18:35" },
+      "saturday": null,
+      "sunday": null
+    }
+  },
+  {
+    "route_id": "14",
+    "service_hours": {
+      "monday": { "start": "07:15", "end": "19:50" },
+      "tuesday": { "start": "07:15", "end": "19:50" },
+      "wednesday": { "start": "07:15", "end": "19:50" },
+      "thursday": { "start": "07:15", "end": "19:50" },
+      "friday": { "start": "07:15", "end": "19:50" },
+      "saturday": null,
+      "sunday": null
+    }
+  }
+]
+

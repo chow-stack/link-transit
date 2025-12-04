@@ -33,8 +33,12 @@ struct NotificationsManagementView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 // Spacer for bottom nav bar (handled by MainContainerView)
-                Spacer()
-                    .frame(height: 60)
+                // Bottom nav bar is 60px + safe area bottom inset
+                GeometryReader { geometry in
+                    Spacer()
+                        .frame(height: 60 + geometry.safeAreaInsets.bottom)
+                }
+                .frame(height: 60)
             }
             .task {
                 // Wait for data to be ready
@@ -122,7 +126,7 @@ struct NotificationsManagementView: View {
                         .font(.system(size: 16))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, min(32, UIScreen.main.bounds.width * 0.08))
                 }
             }
             
@@ -133,152 +137,12 @@ struct NotificationsManagementView: View {
     private var notificationsList: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Global settings section
-                globalSettingsSection
-                
                 // Active notifications section
                 activeNotificationsSection
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
         }
-    }
-    
-    private var globalSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color("PrimaryAccent"))
-                
-                Text("Settings")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.primary)
-            }
-            
-            VStack(spacing: 12) {
-                // Global toggle
-                HStack(spacing: 16) {
-                    Image(systemName: notificationService.notificationsEnabled ? "bell.fill" : "bell.slash.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(notificationService.notificationsEnabled ? Color("PrimaryAccent") : .secondary)
-                        .frame(width: 32)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("All Notifications")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.primary)
-                        
-                        Text(notificationService.notificationsEnabled ? "Enabled" : "Disabled")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Toggle("", isOn: Binding(
-                        get: { notificationService.notificationsEnabled },
-                        set: { _ in notificationService.toggleNotifications() }
-                    ))
-                    .labelsHidden()
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color("Background").opacity(0.8))
-                )
-                
-                // Permission status
-                if notificationService.authorizationStatus != .authorized {
-                    permissionWarning
-                }
-                
-                // Default timing
-                defaultTimingRow
-            }
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background").opacity(0.8))
-        )
-    }
-    
-    private var permissionWarning: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 16))
-                .foregroundStyle(.orange)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Permission Required")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                
-                Text("Enable in Settings to receive alerts")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            Button("Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color("PrimaryAccent"))
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.orange.opacity(0.1))
-        )
-    }
-    
-    private var defaultTimingRow: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "clock.fill")
-                .font(.system(size: 20))
-                .foregroundStyle(Color("PrimaryAccent"))
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Default Timing")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.primary)
-                
-                Text("\(notificationService.defaultAdvanceMinutes) minutes before arrival")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            Menu {
-                ForEach([1, 2, 3, 5, 10, 15, 20, 25, 30], id: \.self) { minutes in
-                    Button("\(minutes) min") {
-                        notificationService.defaultAdvanceMinutes = minutes
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("\(notificationService.defaultAdvanceMinutes) min")
-                        .font(.system(size: 14, weight: .semibold))
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(Color("PrimaryAccent"))
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color("Background").opacity(0.8))
-        )
     }
     
     private var activeNotificationsSection: some View {

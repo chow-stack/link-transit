@@ -338,7 +338,7 @@ struct TripPlannerSearchSheet: View {
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
+                        .frame(minHeight: 44, idealHeight: 50)
                         .background(
                             destination != nil && !isSearching
                             ? Color("PrimaryAccent")

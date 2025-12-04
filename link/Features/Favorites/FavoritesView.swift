@@ -32,8 +32,12 @@ struct FavoritesView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 // Spacer for bottom nav bar (handled by MainContainerView)
-                Spacer()
-                    .frame(height: 60)
+                // Bottom nav bar is 60px + safe area bottom inset
+                GeometryReader { geometry in
+                    Spacer()
+                        .frame(height: 60 + geometry.safeAreaInsets.bottom)
+                }
+                .frame(height: 60)
             }
             .task {
                 // Wait for data to be ready
@@ -88,7 +92,7 @@ struct FavoritesView: View {
                         .font(.system(size: 16))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, min(32, UIScreen.main.bounds.width * 0.08))
                 }
             }
             

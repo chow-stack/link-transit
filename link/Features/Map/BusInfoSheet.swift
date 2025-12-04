@@ -94,6 +94,8 @@ struct BusInfoSheet: View {
                 Text(bus.routeLongName)
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
                 
                 Text("Bus #\(busInfo.busNumber)")
                     .font(.system(size: 16, weight: .medium))
@@ -127,6 +129,8 @@ struct BusInfoSheet: View {
                 Text(busInfo.currentStopName)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
                 
                 if !busInfo.atStop, let eta = busInfo.currentStopETA {
                     HStack(spacing: 6) {
@@ -274,7 +278,8 @@ struct UpcomingStopRow: View {
                 Text(stopName)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.8)
                 
                 if let eta = eta {
                     Text(eta)

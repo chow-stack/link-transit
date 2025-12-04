@@ -21,11 +21,22 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .safeAreaInset(edge: .bottom) {
                 // Spacer for bottom nav bar (handled by MainContainerView)
-                Spacer()
-                    .frame(height: 60)
+                // Bottom nav bar is 60px + safe area bottom inset
+                GeometryReader { geometry in
+                    Spacer()
+                        .frame(height: 60 + geometry.safeAreaInsets.bottom)
+                }
+                .frame(height: 60)
             }
         }
         .background(Color("Background"))
+        .onAppear {
+            // Refresh notification authorization status when view appears
+            // This handles the case where user grants permission in Settings and returns
+            Task {
+                await notificationService.checkAuthorizationStatus()
+            }
+        }
     }
     
     // MARK: - Sections
@@ -86,19 +97,22 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Notifications toggle
-                settingsRow(
-                    icon: notificationService.notificationsEnabled ? "bell.fill" : "bell.slash.fill",
-                    iconColor: notificationService.notificationsEnabled ? Color("PrimaryAccent") : .secondary,
-                    title: "Notifications",
-                    subtitle: notificationService.notificationsEnabled ? "Enabled" : "Disabled"
-                ) {
-                    Toggle("", isOn: Binding(
-                        get: { notificationService.notificationsEnabled },
-                        set: { _ in notificationService.toggleNotifications() }
-                    ))
-                    .labelsHidden()
+                // Notifications button (opens Settings)
+                Button {
+                    openSettings()
+                } label: {
+                    settingsRow(
+                        icon: notificationService.authorizationStatus == .authorized ? "bell.fill" : "bell.slash.fill",
+                        iconColor: notificationService.authorizationStatus == .authorized ? Color("PrimaryAccent") : .secondary,
+                        title: "Notifications",
+                        subtitle: notificationStatusText
+                    ) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(20)
@@ -122,15 +136,15 @@ struct SettingsView: View {
                     subtitle: appVersion
                 )
                 
-                // Feedback
+                // Rate App
                 Button {
-                    sendFeedback()
+                    requestAppReview()
                 } label: {
                     settingsRow(
-                        icon: "envelope.fill",
+                        icon: "star.fill",
                         iconColor: Color("PrimaryAccent"),
-                        title: "Send Feedback",
-                        subtitle: "Share your thoughts"
+                        title: "Rate App",
+                        subtitle: "Share your feedback"
                     ) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12))
@@ -206,15 +220,31 @@ struct SettingsView: View {
         return "1.0"
     }
     
+    private var notificationStatusText: String {
+        switch notificationService.authorizationStatus {
+        case .authorized:
+            return "Enabled"
+        case .denied:
+            return "Disabled - Tap to open Settings"
+        case .notDetermined:
+            return "Not configured"
+        case .provisional:
+            return "Provisional"
+        case .ephemeral:
+            return "Ephemeral"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+    
     // MARK: - Actions
     
-    private func sendFeedback() {
-        let subject = "Bloom Bus Feedback"
-        let body = ""
-        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        
-        if let url = URL(string: "mailto:support@bloombus.app?subject=\(encodedSubject)&body=\(encodedBody)") {
+    private func requestAppReview() {
+        AppReviewService.requestInAppReview()
+    }
+    
+    private func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
     }

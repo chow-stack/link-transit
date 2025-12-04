@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct BloomBusApp: App {
+struct LinkApp: App {
     @State private var locationManager = LocationManager()
     @State private var dataSyncService = DataSyncService()
     @State private var filterStore = RouteFilterStore()
@@ -44,8 +44,35 @@ struct BloomBusApp: App {
                 .onAppear {
                     // Start alerts service fetching on app launch
                     alertsService.startFetching()
+                    
+                    // Request notification permission on first launch
+                    Task {
+                        await notificationService.requestPermissionIfNeeded()
+                    }
                 }
+                .background(
+                    ScenePhaseObserver(notificationService: notificationService)
+                )
         }
+    }
+}
+
+/// Helper view to observe scene phase changes and refresh notification authorization status
+private struct ScenePhaseObserver: View {
+    @Environment(\.scenePhase) private var scenePhase
+    let notificationService: NotificationService
+    
+    var body: some View {
+        Color.clear
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // Refresh notification authorization status when app becomes active
+                // This handles the case where user grants permission in Settings and returns
+                if newPhase == .active && oldPhase != .active {
+                    Task {
+                        await notificationService.checkAuthorizationStatus()
+                    }
+                }
+            }
     }
 }
 
