@@ -155,6 +155,22 @@ struct SettingsView: View {
                     title: "Version",
                     subtitle: appVersion
                 )
+
+                NavigationLink {
+                    PrivacyPolicyView()
+                } label: {
+                    settingsRow(
+                        icon: "hand.raised.fill",
+                        iconColor: Color("PrimaryAccent"),
+                        title: "Privacy Policy",
+                        subtitle: "How Link handles your data"
+                    ) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
                 
                 // Rate App
                 Button {
@@ -250,10 +266,9 @@ struct SettingsView: View {
     // MARK: - Computed Properties
     
     private var appVersion: String {
-        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            return version
-        }
-        return "1.0"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        return build.map { "\(version) (\($0))" } ?? version
     }
     
     private var notificationStatusText: String {

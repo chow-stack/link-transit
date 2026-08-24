@@ -5,19 +5,16 @@ import SwiftUI
 /// Service for handling app review prompts and App Store navigation
 /// Follows Apple's best practices for in-app reviews and App Store links
 enum AppReviewService {
-    /// Placeholder App Store ID - replace with your actual App Store ID when available
-    /// Format: https://apps.apple.com/app/idYOUR_APP_STORE_ID
+    /// App Store Connect Apple ID for Link.
     static let appStoreID = "6755202112"
     
     /// App Store review URL with write-review action
     static var appStoreReviewURL: URL? {
-        guard appStoreID != "6755202112" else { return nil }
         return URL(string: "https://apps.apple.com/app/id\(appStoreID)?action=write-review")
     }
     
     /// App Store page URL (without write-review action)
     static var appStorePageURL: URL? {
-        guard appStoreID != "6755202112" else { return nil }
         return URL(string: "https://apps.apple.com/app/id\(appStoreID)")
     }
     
@@ -66,4 +63,3 @@ enum AppReviewService {
         UIApplication.shared.open(url)
     }
 }
-
