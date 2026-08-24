@@ -11,6 +11,7 @@ struct LinkApp: App {
     @State private var alertsService = AlertsService()
     @State private var themePreference = ThemePreference()
     @State private var networkMonitor = NetworkMonitor.shared
+    @State private var onboardingStore = OnboardingStore()
     
     // SwiftData model container for route filters, favorites, and notifications
     let modelContainer: ModelContainer
@@ -30,7 +31,7 @@ struct LinkApp: App {
     
     var body: some Scene {
         WindowGroup {
-            MainContainerView()
+            AppRootView()
                 .environment(locationManager)
                 .environment(dataSyncService)
                 .environment(filterStore)
@@ -39,21 +40,41 @@ struct LinkApp: App {
                 .environment(alertsService)
                 .environment(themePreference)
                 .environment(networkMonitor)
+                .environment(onboardingStore)
                 .modelContainer(modelContainer)
                 .preferredColorScheme(themePreference.colorScheme)
                 .onAppear {
                     // Start alerts service fetching on app launch
                     alertsService.startFetching()
-                    
-                    // Request notification permission on first launch
                     Task {
-                        await notificationService.requestPermissionIfNeeded()
+                        await notificationService.clearBadge()
                     }
                 }
                 .background(
-                    ScenePhaseObserver(notificationService: notificationService)
+                    ScenePhaseObserver(
+                        notificationService: notificationService,
+                        dataSyncService: dataSyncService,
+                        alertsService: alertsService
+                    )
                 )
         }
+    }
+}
+
+private struct AppRootView: View {
+    @Environment(OnboardingStore.self) private var onboardingStore
+
+    var body: some View {
+        Group {
+            if onboardingStore.needsOnboarding {
+                OnboardingView()
+                    .transition(.opacity.combined(with: .scale(scale: 1.015)))
+            } else {
+                MainContainerView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: onboardingStore.needsOnboarding)
     }
 }
 
@@ -61,6 +82,8 @@ struct LinkApp: App {
 private struct ScenePhaseObserver: View {
     @Environment(\.scenePhase) private var scenePhase
     let notificationService: NotificationService
+    let dataSyncService: DataSyncService
+    let alertsService: AlertsService
     
     var body: some View {
         Color.clear
@@ -68,11 +91,19 @@ private struct ScenePhaseObserver: View {
                 // Refresh notification authorization status when app becomes active
                 // This handles the case where user grants permission in Settings and returns
                 if newPhase == .active && oldPhase != .active {
+                    dataSyncService.resumeAutoRefreshIfNeeded()
+                    alertsService.startFetching()
                     Task {
                         await notificationService.checkAuthorizationStatus()
+                        await notificationService.clearBadge()
+                        if notificationService.isInitialized {
+                            await notificationService.refreshNotifications()
+                        }
                     }
+                } else if newPhase != .active {
+                    dataSyncService.stopAutoRefresh()
+                    alertsService.stopFetching()
                 }
             }
     }
 }
-

@@ -7,6 +7,7 @@ actor GTFSRealtimeService {
     
     private let session: URLSession
     private var cachedVehicles: (data: [Vehicle], timestamp: Date)?
+    private var inFlightFetch: Task<[Vehicle], Error>?
     private let cacheTimeout: TimeInterval = 3.0 // Shorter than 5s refresh to ensure fresh data
     
     private init() {
@@ -31,9 +32,18 @@ actor GTFSRealtimeService {
             return cached.data
         }
         
-        // Fetch and parse the .pb file with retry logic
+        let fetchTask: Task<[Vehicle], Error>
+        if let inFlightFetch {
+            fetchTask = inFlightFetch
+        } else {
+            let newTask = Task { try await self.fetchAndParseVehiclePositions() }
+            inFlightFetch = newTask
+            fetchTask = newTask
+        }
+
         do {
-            let vehicles = try await fetchAndParseVehiclePositions()
+            let vehicles = try await fetchTask.value
+            inFlightFetch = nil
             
             // Update cache only if we got data
             if !vehicles.isEmpty {
@@ -48,6 +58,7 @@ actor GTFSRealtimeService {
             
             return vehicles
         } catch {
+            inFlightFetch = nil
             // Check if error is cancellation (expected when tasks are cancelled)
             let isCancellation = (error as NSError).code == NSURLErrorCancelled
             
@@ -60,10 +71,7 @@ actor GTFSRealtimeService {
                 return cached.data
             }
             
-            // No cache available - return empty array gracefully instead of throwing
-            // This prevents app crashes on slow networks during launch
-            print("⚠️ Vehicle fetch failed with no cache: \(error.localizedDescription). Returning empty array.")
-            return []
+            throw error
         }
     }
     
@@ -151,7 +159,7 @@ actor GTFSRealtimeService {
                     // For timeout on last attempt, return empty array gracefully
                     if isTimeout && attempt == APIConfig.maxRetries - 1 {
                         print("⚠️ Vehicle positions fetch timed out after \(APIConfig.maxRetries) attempts. Using empty array.")
-                        return []
+                        throw NetworkError.timeout
                     }
                     throw NetworkError.networkError(error)
                 }
@@ -193,4 +201,3 @@ actor GTFSRealtimeService {
         cachedVehicles = nil
     }
 }
-

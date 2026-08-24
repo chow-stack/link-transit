@@ -298,11 +298,11 @@ struct StopDetailsSheetLoaderSimple: View {
     let servingRoutes: [Route]
     @Environment(DataSyncService.self) private var dataSyncService
     @State private var arrivals: [Arrival] = []
-    @State private var isLoading = true
+    @State private var hasLoaded = false
     
     var body: some View {
         Group {
-            if isLoading {
+            if !hasLoaded {
                 StopLoadingView(stopName: stop.name)
                     .transition(.opacity)
             } else {
@@ -310,16 +310,10 @@ struct StopDetailsSheetLoaderSimple: View {
                     .transition(.opacity)
             }
         }
-        .task {
-            // Fetch data immediately - no initial delay
+        .task(id: dataSyncService.tripUpdatesGeneration) {
             arrivals = await dataSyncService.stopTimesService.getUpcomingArrivals(for: stop.id, maxArrivals: 10)
-            
-            // Ensure loading was visible for minimum time
-            try? await Task.sleep(for: .milliseconds(300))
-            
-            // Smooth transition to content
             withAnimation(.easeInOut(duration: 0.25)) {
-                isLoading = false
+                hasLoaded = true
             }
         }
     }
@@ -412,4 +406,3 @@ struct StopDetailsSheetLoaderSimple: View {
     
     return StopDetailsSheet(stop: stop, arrivals: arrivals, servingRoutes: servingRoutes)
 }
-

@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 
 /// Represents a bus stop location
-struct Stop: Identifiable, Codable, Hashable {
+struct Stop: Identifiable, Codable, Hashable, Sendable {
     let id: Int
     let name: String
     let lat: Double
@@ -19,4 +19,3 @@ struct Stop: Identifiable, Codable, Hashable {
     /// Computed property for longitude (for consistency)
     var longitude: Double { lon }
 }
-

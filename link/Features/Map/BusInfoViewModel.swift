@@ -1,32 +1,30 @@
 import Foundation
 import CoreLocation
-import Observation
 
 /// View model for managing bus information and stop sequence
-@Observable
 @MainActor
-class BusInfoViewModel {
+struct BusInfoViewModel {
     private let stopTimesService: StopTimesService
     private let realtimeETAService = RealtimeETAService.shared
-    private let trips: [Trip]
-    private let stops: [Stop]
-    
-    // Lookup dictionaries for performance
-    private var tripLookup: [String: Trip]
-    private var stopLookup: [Int: Stop]
+    private let tripLookup: [String: Trip]
+    private let stopLookup: [Int: Stop]
+    private let firstTripByRouteId: [String: Trip]
     
     // Cached trip updates for performance
     private let tripUpdates: [String: TripUpdate]?
     
-    init(stopTimesService: StopTimesService, trips: [Trip], stops: [Stop], tripUpdates: [String: TripUpdate]? = nil) {
+    init(
+        stopTimesService: StopTimesService,
+        tripLookup: [String: Trip],
+        stopLookup: [Int: Stop],
+        firstTripByRouteId: [String: Trip],
+        tripUpdates: [String: TripUpdate]? = nil
+    ) {
         self.stopTimesService = stopTimesService
-        self.trips = trips
-        self.stops = stops
+        self.tripLookup = tripLookup
+        self.stopLookup = stopLookup
+        self.firstTripByRouteId = firstTripByRouteId
         self.tripUpdates = tripUpdates
-        
-        // Build lookups
-        self.tripLookup = Dictionary(uniqueKeysWithValues: trips.map { ($0.trip_id, $0) })
-        self.stopLookup = Dictionary(uniqueKeysWithValues: stops.map { ($0.id, $0) })
     }
     
     /// Get bus info including current stop and upcoming stops
@@ -134,7 +132,7 @@ class BusInfoViewModel {
         
         // Fallback: if no tripId, try to find a trip for this route
         if !bus.vehicle.routeId.isEmpty {
-            if let trip = trips.first(where: { $0.route_id == bus.vehicle.routeId }) {
+            if let trip = firstTripByRouteId[bus.vehicle.routeId] {
                 return trip.trip_id
             }
         }
@@ -362,4 +360,3 @@ class BusInfoViewModel {
         }
     }
 }
-

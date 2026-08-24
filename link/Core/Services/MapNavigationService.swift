@@ -19,11 +19,12 @@ class MapNavigationService {
     /// Trigger navigation to a stop
     /// Always stores as pending and switches to map tab, then ContentView will handle it when ready
     func requestNavigation(to stop: Stop) {
-        // Store as pending - ContentView will handle it when ready
-        pendingStop = stop
-        
-        // Switch to map tab if callback is set
         switchToMapTab?()
+        if let navigateToStop {
+            pendingStop = nil
+            navigateToStop(stop)
+        } else {
+            pendingStop = stop
+        }
     }
 }
-

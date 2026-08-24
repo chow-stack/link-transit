@@ -1,6 +1,6 @@
 import Foundation
 
-struct Shape: Codable, Identifiable {
+struct Shape: Codable, Identifiable, Sendable {
     let shape_id: String
     let shape_pt_lat: Double
     let shape_pt_lon: Double

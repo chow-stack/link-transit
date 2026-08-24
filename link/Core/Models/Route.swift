@@ -1,6 +1,6 @@
 import Foundation
 
-struct Route: Codable, Identifiable {
+struct Route: Codable, Identifiable, Sendable {
     let route_id: String
     let route_short_name: String
     let route_long_name: String

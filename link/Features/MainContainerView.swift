@@ -2,11 +2,12 @@ import SwiftUI
 
 /// Main container view managing tab-based navigation
 struct MainContainerView: View {
+    @Environment(NotificationService.self) private var notificationService
+    @Environment(DataSyncService.self) private var dataSyncService
     @State private var selectedTab: MainTab = .map
     @State private var showingFilterSheet = false
     @State private var showingBookingSheet = false
     @State private var mapNavigationService = MapNavigationService()
-    @State private var tripPlannerViewModel: TripPlannerViewModel?
     
     enum MainTab {
         case map
@@ -17,31 +18,26 @@ struct MainContainerView: View {
     
     var body: some View {
         ZStack {
-            // Show the current page based on selected tab
-            Group {
-                switch selectedTab {
-                case .map:
-                    ContentView(
-                        selectedTab: $selectedTab,
-                        showingFilterSheet: $showingFilterSheet,
-                        tripPlannerViewModel: $tripPlannerViewModel
-                    )
+            // Keep each tab mounted so the map camera, prepared annotations, and
+            // navigation state survive tab changes.
+            ZStack {
+                ContentView(
+                    selectedTab: $selectedTab,
+                    showingFilterSheet: $showingFilterSheet
+                )
+                .environment(mapNavigationService)
+                .tabLayer(isActive: selectedTab == .map)
+
+                FavoritesView()
                     .environment(mapNavigationService)
-                    
-                case .favorites:
-                    FavoritesView()
-                        .environment(mapNavigationService)
-                        .transition(.opacity)
-                    
-                case .notifications:
-                    NotificationsManagementView()
-                        .environment(mapNavigationService)
-                        .transition(.opacity)
-                    
-                case .settings:
-                    SettingsView()
-                        .transition(.opacity)
-                }
+                    .tabLayer(isActive: selectedTab == .favorites)
+
+                NotificationsManagementView()
+                    .environment(mapNavigationService)
+                    .tabLayer(isActive: selectedTab == .notifications)
+
+                SettingsView()
+                    .tabLayer(isActive: selectedTab == .settings)
             }
             .animation(.easeInOut(duration: 0.2), value: selectedTab)
             
@@ -59,12 +55,38 @@ struct MainContainerView: View {
             mapNavigationService.switchToMapTab = {
                 selectedTab = .map
             }
+            openPendingNotificationIfPossible()
+        }
+        .onChange(of: notificationService.pendingNavigationStopId) { _, _ in
+            openPendingNotificationIfPossible()
+        }
+        .onChange(of: dataSyncService.isStaticDataReady) { _, _ in
+            openPendingNotificationIfPossible()
         }
         .sheet(isPresented: $showingBookingSheet) {
             if let url = URL(string: "https://book.blink.rideco.com/home/booking/search") {
                 SafariView(url: url)
             }
         }
+    }
+
+    private func openPendingNotificationIfPossible() {
+        guard let stopId = notificationService.pendingNavigationStopId,
+              let stop = dataSyncService.stops.first(where: { $0.id == stopId }) else {
+            return
+        }
+
+        _ = notificationService.consumePendingNavigationStopId()
+        mapNavigationService.requestNavigation(to: stop)
+    }
+}
+
+private extension View {
+    func tabLayer(isActive: Bool) -> some View {
+        opacity(isActive ? 1 : 0)
+            .allowsHitTesting(isActive)
+            .accessibilityHidden(!isActive)
+            .zIndex(isActive ? 1 : 0)
     }
 }
 
@@ -194,4 +216,3 @@ struct BottomNavBar: View {
         .environment(AlertsService())
         .environment(ThemePreference())
 }
-

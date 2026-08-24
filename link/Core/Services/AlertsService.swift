@@ -86,8 +86,7 @@ class AlertsService {
     
     /// Start periodic alert fetching
     func startFetching() {
-        // Cancel any existing task
-        fetchTask?.cancel()
+        guard fetchTask == nil else { return }
         
         // Start new fetch task
         fetchTask = Task { [weak self] in
@@ -276,4 +275,3 @@ class AlertsService {
         }
     }
 }
-

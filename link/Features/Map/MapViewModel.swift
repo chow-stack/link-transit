@@ -13,29 +13,32 @@ class MapViewModel {
     
     // MARK: - Lookup Dictionaries (built once during initialization)
     
-    /// Route lookup by short name for O(1) access
-    private var routeLookupByShortName: [String: Route] = [:]
-    
-    /// Route lookup by ID for O(1) access
-    private var routeLookupById: [String: Route] = [:]
-    
     /// Trip lookup by ID for O(1) access
     private var tripLookupById: [String: Trip] = [:]
+    private var stopLookupById: [Int: Stop] = [:]
+    private var firstTripByRouteId: [String: Trip] = [:]
+
+    private var busInfoCache: [String: (info: BusInfo, vehicleUpdate: Date, tripUpdate: Date?, cachedAt: Date)] = [:]
+    private let busInfoCacheDuration: TimeInterval = 10
     
     // MARK: - Computed Properties from DataSyncService
     
     var vehicles: [Vehicle] { dataSyncService.vehicles }
     
-    /// Stops filtered by enabled routes and active buses
-    var stops: [StopWithColor] {
+    /// Prepared map content. SwiftUI reads these stable arrays instead of
+    /// rebuilding the network graph during every view-body evaluation.
+    private(set) var stops: [StopWithColor] = []
+    private(set) var enrichedVehicles: [EnrichedVehicle] = []
+    private(set) var routePolylines: [RoutePolyline] = []
+
+    /// Rebuild map content only when realtime data or user filters change.
+    func rebuildMapSnapshot() {
         let allStops = dataSyncService.stops
         let enabledRouteIds = getEnabledRouteIds()
         let routesWithActiveBuses = getRoutesWithActiveBuses()
-        
         let stopsForActiveRoutes = dataSyncService.stopTimesService.getStopsForRoutes(routesWithActiveBuses)
-        
-        // For each stop, determine which routes serve it and get the appropriate color
-        return allStops
+
+        stops = allStops
             .filter { stopsForActiveRoutes.contains($0.id) }
             .compactMap { stop -> StopWithColor? in
                 let servingRoutes = dataSyncService.stopTimesService.getRoutesForStop(stop.id)
@@ -53,50 +56,31 @@ class MapViewModel {
                 
                 return StopWithColor(stop: stop, routeColor: routeColor)
             }
-    }
-    
-    /// Enriched vehicles filtered by user's route selection and favorites
-    var enrichedVehicles: [EnrichedVehicle] {
+
         let allVehicles = dataSyncService.enrichedVehicles()
-        let enabledRouteIds = getEnabledRouteIds()
-        
         if favoriteStore.showFavoritesOnly {
             let favoritedRouteIds = Set(favoriteStore.routeFavorites.map { $0.itemId })
-            return allVehicles.filter { vehicle in
+            enrichedVehicles = allVehicles.filter { vehicle in
                 let routeId = vehicle.vehicle.routeId
                 return enabledRouteIds.contains(routeId) && favoritedRouteIds.contains(routeId)
             }
         } else {
-            return allVehicles.filter { vehicle in
+            enrichedVehicles = allVehicles.filter { vehicle in
                 enabledRouteIds.contains(vehicle.vehicle.routeId)
             }
         }
-    }
-    
-    /// Route polylines filtered by user's route selection and favorites
-    var routePolylines: [RoutePolyline] {
+
         let allPolylines = dataSyncService.getActiveRoutePolylines()
-        let enabledRouteIds = getEnabledRouteIds()
-        
         let favoritedRouteIds: Set<String>? = favoriteStore.showFavoritesOnly 
             ? Set(favoriteStore.routeFavorites.map { $0.itemId })
             : nil
-        
-        // Filter polylines using dictionary lookup
-        return allPolylines.compactMap { polyline -> RoutePolyline? in
-            guard let route = routeLookupByShortName[polyline.routeName],
-                  enabledRouteIds.contains(route.route_id) else {
-                return nil
-            }
-            
-            // Apply favorites filter if enabled
+
+        routePolylines = allPolylines.filter { polyline in
+            guard enabledRouteIds.contains(polyline.routeId) else { return false }
             if let favoritedIds = favoritedRouteIds {
-                guard favoritedIds.contains(route.route_id) else {
-                    return nil
-                }
+                return favoritedIds.contains(polyline.routeId)
             }
-            
-            return polyline
+            return true
         }
     }
     
@@ -113,14 +97,29 @@ class MapViewModel {
     
     /// Get bus information including current stop and upcoming stops
     func getBusInfo(for bus: EnrichedVehicle) async -> BusInfo? {
+        if let cached = busInfoCache[bus.id],
+           cached.vehicleUpdate == bus.lastUpdated,
+           cached.tripUpdate == dataSyncService.tripUpdatesGeneration,
+           Date().timeIntervalSince(cached.cachedAt) < busInfoCacheDuration {
+            return cached.info
+        }
+
         let tripUpdates = dataSyncService.getCachedTripUpdates()
         let viewModel = BusInfoViewModel(
             stopTimesService: dataSyncService.stopTimesService,
-            trips: dataSyncService.trips,
-            stops: dataSyncService.stops,
+            tripLookup: tripLookupById,
+            stopLookup: stopLookupById,
+            firstTripByRouteId: firstTripByRouteId,
             tripUpdates: tripUpdates
         )
-        return await viewModel.getBusInfo(for: bus)
+        guard let info = await viewModel.getBusInfo(for: bus) else { return nil }
+        busInfoCache[bus.id] = (
+            info: info,
+            vehicleUpdate: bus.lastUpdated,
+            tripUpdate: dataSyncService.tripUpdatesGeneration,
+            cachedAt: Date()
+        )
+        return info
     }
     
     /// Check if no buses are active (NOT considering filters)
@@ -174,28 +173,25 @@ class MapViewModel {
         await dataSyncService.initialize()
         // Build lookup dictionaries after data is loaded
         buildLookupDictionaries()
+        rebuildMapSnapshot()
     }
     
     /// Manually refresh vehicle data
     func refresh() async {
         await dataSyncService.refresh(forceRefresh: true)
+        rebuildMapSnapshot()
     }
     
     // MARK: - Lookup Dictionaries
     
-    /// Build lookup dictionaries for O(1) route/trip access
+    /// Build lookup dictionaries for O(1) trip and stop access
     private func buildLookupDictionaries() {
-        routeLookupByShortName = Dictionary(uniqueKeysWithValues: dataSyncService.routes.compactMap { route -> (String, Route)? in
-            // route_short_name is non-optional String, but may be empty
-            if route.route_short_name.isEmpty {
-                return nil
-            }
-            return (route.route_short_name, route)
-        })
-        
-        routeLookupById = Dictionary(uniqueKeysWithValues: dataSyncService.routes.map { ($0.route_id, $0) })
-        
         tripLookupById = Dictionary(uniqueKeysWithValues: dataSyncService.trips.map { ($0.trip_id, $0) })
+        stopLookupById = Dictionary(uniqueKeysWithValues: dataSyncService.stops.map { ($0.id, $0) })
+        firstTripByRouteId = Dictionary(
+            dataSyncService.trips.map { ($0.route_id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
     
     // MARK: - Filtering Logic
@@ -220,23 +216,6 @@ class MapViewModel {
         let enabledRouteIds = getEnabledRouteIds()
         let activeRouteIds = getActiveRouteIds()
         return enabledRouteIds.intersection(activeRouteIds)
-    }
-    
-    // MARK: - Lookup Methods
-    
-    /// Get route by short name (O(1) lookup)
-    func route(byShortName shortName: String) -> Route? {
-        return routeLookupByShortName[shortName]
-    }
-    
-    /// Get route by ID (O(1) lookup)
-    func route(byId routeId: String) -> Route? {
-        return routeLookupById[routeId]
-    }
-    
-    /// Get trip by ID (O(1) lookup)
-    func trip(byId tripId: String) -> Trip? {
-        return tripLookupById[tripId]
     }
     
 }

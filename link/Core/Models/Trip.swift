@@ -1,6 +1,6 @@
 import Foundation
 
-struct Trip: Codable, Identifiable {
+struct Trip: Codable, Identifiable, Sendable {
     let route_id: String
     let service_id: String
     let trip_id: String

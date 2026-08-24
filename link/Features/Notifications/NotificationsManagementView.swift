@@ -6,17 +6,15 @@ struct NotificationsManagementView: View {
     @Environment(DataSyncService.self) private var dataSyncService
     @State private var showingClearAlert = false
     @State private var preferenceToEdit: StopNotification?
-    @State private var isLoading = true
+    private let timingOptions = [1, 2, 3, 5, 10, 15, 20, 25, 30]
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if isLoading {
+            Group {
+                if !notificationService.isInitialized {
                     SimpleLoadingView()
-                } else if notificationService.getNotificationPreferences().isEmpty {
-                    emptyState
                 } else {
-                    notificationsList
+                    notificationsContent
                 }
             }
             .navigationTitle("Notifications")
@@ -40,27 +38,11 @@ struct NotificationsManagementView: View {
                 }
                 .frame(height: 60)
             }
-            .task {
-                // Wait for data to be ready
-                if !dataSyncService.routes.isEmpty {
-                    // Data already loaded
-                    try? await Task.sleep(for: .milliseconds(300))
-                    withAnimation {
-                        isLoading = false
-                    }
-                } else {
-                    // Wait for data to load
-                    while dataSyncService.routes.isEmpty && !Task.isCancelled {
-                        try? await Task.sleep(for: .milliseconds(100))
-                    }
-                    try? await Task.sleep(for: .milliseconds(300))
-                    withAnimation {
-                        isLoading = false
-                    }
-                }
-            }
         }
         .background(Color("Background"))
+        .task {
+            await notificationService.checkAuthorizationStatus()
+        }
         .alert("Delete All Notifications", isPresented: $showingClearAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete All", role: .destructive) {
@@ -107,11 +89,117 @@ struct NotificationsManagementView: View {
     }
     
     // MARK: - UI Components
+
+    private var notificationsContent: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                notificationSettingsSection
+
+                if notificationService.getNotificationPreferences().isEmpty {
+                    emptyState
+                } else {
+                    activeNotificationsSection
+                }
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private var notificationSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "gearshape.fill")
+                    .foregroundStyle(Color("PrimaryAccent"))
+                Text("Alert Settings")
+                    .font(.system(size: 20, weight: .bold))
+            }
+
+            VStack(spacing: 0) {
+                settingsRow(
+                    icon: notificationService.canScheduleNotifications ? "bell.fill" : "bell.slash.fill",
+                    title: "Arrival Alerts",
+                    subtitle: permissionStatusText
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { notificationService.notificationsEnabled && notificationService.canScheduleNotifications },
+                        set: { shouldEnable in
+                            Task { await setNotificationsEnabled(shouldEnable) }
+                        }
+                    ))
+                    .labelsHidden()
+                    .tint(Color("PrimaryAccent"))
+                }
+
+                Divider().padding(.leading, 48)
+
+                settingsRow(
+                    icon: "timer",
+                    title: "Default Notice",
+                    subtitle: "For new stop alerts"
+                ) {
+                    Menu {
+                        ForEach(timingOptions, id: \.self) { minutes in
+                            Button {
+                                notificationService.defaultAdvanceMinutes = minutes
+                            } label: {
+                                if minutes == notificationService.defaultAdvanceMinutes {
+                                    Label("\(minutes) min", systemImage: "checkmark")
+                                } else {
+                                    Text("\(minutes) min")
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("\(notificationService.defaultAdvanceMinutes) min")
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color("PrimaryAccent"))
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color("Background").opacity(0.8))
+        )
+    }
+
+    private func settingsRow<Trailing: View>(
+        icon: String,
+        title: String,
+        subtitle: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color("PrimaryAccent"))
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 16, weight: .medium))
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+            trailing()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 13)
+        .background(Color("Background").opacity(0.65))
+    }
     
     private var emptyState: some View {
         VStack(spacing: 24) {
-            Spacer()
-            
             VStack(spacing: 16) {
                 Image(systemName: "bell.slash")
                     .font(.system(size: 64))
@@ -130,19 +218,14 @@ struct NotificationsManagementView: View {
                 }
             }
             
-            Spacer()
         }
-    }
-    
-    private var notificationsList: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Active notifications section
-                activeNotificationsSection
-            }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 20)
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 54)
+        .padding(.horizontal, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color("Background").opacity(0.8))
+        )
     }
     
     private var activeNotificationsSection: some View {
@@ -200,6 +283,43 @@ struct NotificationsManagementView: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color("Background").opacity(0.8))
         )
+    }
+
+    private var permissionStatusText: String {
+        switch notificationService.authorizationStatus {
+        case .authorized: return notificationService.notificationsEnabled ? "Enabled" : "Paused in Link"
+        case .provisional: return notificationService.notificationsEnabled ? "Delivering quietly" : "Paused in Link"
+        case .denied: return "Off in iOS Settings"
+        case .notDetermined: return "Tap to allow notifications"
+        case .ephemeral: return "Temporarily enabled"
+        @unknown default: return "Unavailable"
+        }
+    }
+
+    private func setNotificationsEnabled(_ shouldEnable: Bool) async {
+        if !shouldEnable {
+            if notificationService.notificationsEnabled {
+                notificationService.toggleNotifications()
+            }
+            return
+        }
+
+        if !notificationService.canScheduleNotifications {
+            let granted = await notificationService.requestPermission()
+            if !granted {
+                openAppSettings()
+                return
+            }
+        }
+
+        if !notificationService.notificationsEnabled {
+            notificationService.toggleNotifications()
+        }
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 
@@ -314,4 +434,3 @@ struct NotificationPreferenceRow: View {
     NotificationsManagementView()
         .environment(NotificationService())
 }
-

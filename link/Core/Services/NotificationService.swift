@@ -8,37 +8,51 @@ import Observation
 @MainActor
 class NotificationService {
     private let notificationCenter = UNUserNotificationCenter.current()
+    private let responseDelegate = NotificationCenterDelegate()
     private var modelContext: ModelContext?
     private var dataSyncService: DataSyncService?
+    private var isScheduling = false
     
     /// Current authorization status
     var authorizationStatus: UNAuthorizationStatus = .notDetermined
+
+    /// Both full and provisional permission can receive scheduled notifications.
+    var canScheduleNotifications: Bool {
+        authorizationStatus == .authorized || authorizationStatus == .provisional
+    }
+
+    /// Set when a delivered notification is tapped. MainContainerView consumes
+    /// this after static stop data and map navigation are available.
+    private(set) var pendingNavigationStopId: Int?
     
     /// Whether notifications are globally enabled
     var notificationsEnabled: Bool {
-        get {
-            UserDefaults.standard.bool(forKey: "notificationsEnabled")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "notificationsEnabled")
+        didSet {
+            UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled")
         }
     }
     
     /// Default advance minutes for new notifications
     var defaultAdvanceMinutes: Int {
-        get {
-            let value = UserDefaults.standard.integer(forKey: "defaultAdvanceMinutes")
-            return value > 0 ? value : 5 // Default to 5 minutes
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "defaultAdvanceMinutes")
+        didSet {
+            UserDefaults.standard.set(defaultAdvanceMinutes, forKey: "defaultAdvanceMinutes")
         }
     }
     
     /// All active notification preferences
     private var notificationPreferences: [StopNotification] = []
+    private(set) var isInitialized = false
     
     init() {
+        notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
+        let savedAdvanceMinutes = UserDefaults.standard.integer(forKey: "defaultAdvanceMinutes")
+        defaultAdvanceMinutes = savedAdvanceMinutes > 0 ? savedAdvanceMinutes : 5
+
+        notificationCenter.delegate = responseDelegate
+        responseDelegate.onOpenStop = { [weak self] stopId in
+            self?.pendingNavigationStopId = stopId
+        }
+
         Task {
             await checkAuthorizationStatus()
         }
@@ -54,6 +68,11 @@ class NotificationService {
         self.dataSyncService = dataSyncService
         await loadNotificationPreferences()
         await checkAuthorizationStatus()
+        isInitialized = true
+
+        if notificationsEnabled && canScheduleNotifications {
+            await scheduleAllNotifications()
+        }
     }
     
     /// Load notification preferences from SwiftData
@@ -76,36 +95,19 @@ class NotificationService {
         authorizationStatus = settings.authorizationStatus
     }
     
-    /// Request notification permission if not determined (first launch)
-    /// This should be called on app launch to request permission on first use
-    func requestPermissionIfNeeded() async {
-        // Check current status first
-        await checkAuthorizationStatus()
-        
-        // Only request if status is not determined (first launch)
-        guard authorizationStatus == .notDetermined else {
-            print("ℹ️ Notification permission already determined: \(authorizationStatus.rawValue)")
-            return
-        }
-        
-        // Request permission
-        do {
-            let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
-            await checkAuthorizationStatus()
-            
-            if granted {
-                notificationsEnabled = true
-                print("✅ Notification permission granted on first launch")
-            } else {
-                print("⚠️ Notification permission denied on first launch")
-            }
-        } catch {
-            print("❌ Failed to request notification permission: \(error)")
-        }
-    }
-    
-    /// Request notification permission (can be called from UI)
+    /// Request notification permission from an explicit, contextual UI action.
     func requestPermission() async -> Bool {
+        await checkAuthorizationStatus()
+
+        if canScheduleNotifications {
+            notificationsEnabled = true
+            return true
+        }
+
+        guard authorizationStatus == .notDetermined else {
+            return false
+        }
+
         do {
             let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
             await checkAuthorizationStatus()
@@ -137,6 +139,11 @@ class NotificationService {
     /// Check if notifications are enabled for a specific stop
     func hasNotification(for stopId: Int) -> Bool {
         return notificationPreferences.contains { $0.stopId == stopId && $0.isEnabled }
+    }
+
+    func consumePendingNavigationStopId() -> Int? {
+        defer { pendingNavigationStopId = nil }
+        return pendingNavigationStopId
     }
     
     /// Save or update notification preference
@@ -182,8 +189,10 @@ class NotificationService {
         }
         
         // Schedule notifications if enabled
-        if notificationsEnabled && authorizationStatus == .authorized {
-            await scheduleNotificationsForStop(stopId)
+        if notificationsEnabled && canScheduleNotifications {
+            // Rebuild the shared queue so the app stays below the system-wide
+            // pending-notification limit as users add more stops.
+            await scheduleAllNotifications()
         }
     }
     
@@ -216,7 +225,7 @@ class NotificationService {
             // Cancel all pending notifications
             notificationCenter.removeAllPendingNotificationRequests()
             print("🔕 Disabled all notifications")
-        } else if authorizationStatus == .authorized {
+        } else if canScheduleNotifications {
             // Reschedule all notifications
             Task {
                 await scheduleAllNotifications()
@@ -225,10 +234,10 @@ class NotificationService {
     }
     
     /// Schedule notifications for a specific stop
-    private func scheduleNotificationsForStop(_ stopId: Int) async {
+    private func scheduleNotificationsForStop(_ stopId: Int, limit: Int) async -> Int {
         guard let preference = notificationPreferences.first(where: { $0.stopId == stopId && $0.isEnabled }),
               let dataSyncService = dataSyncService else {
-            return
+            return 0
         }
         
         // Cancel existing notifications for this stop
@@ -243,19 +252,23 @@ class NotificationService {
         }
         
         // Schedule notification for each arrival
-        for arrival in relevantArrivals {
-            await scheduleNotification(for: arrival, preference: preference)
+        var scheduledCount = 0
+        for arrival in relevantArrivals.prefix(limit) {
+            if await scheduleNotification(for: arrival, preference: preference) {
+                scheduledCount += 1
+            }
         }
+        return scheduledCount
     }
     
     /// Schedule a notification for a specific arrival
-    private func scheduleNotification(for arrival: Arrival, preference: StopNotification) async {
+    private func scheduleNotification(for arrival: Arrival, preference: StopNotification) async -> Bool {
         // Calculate notification time
         let notificationTime = arrival.arrivalTime.addingTimeInterval(-Double(preference.advanceMinutes * 60))
         
         // Don't schedule if notification time is in the past
         guard notificationTime > Date() else {
-            return
+            return false
         }
         
         // Create notification content
@@ -284,8 +297,10 @@ class NotificationService {
         do {
             try await notificationCenter.add(request)
             print("✅ Scheduled notification for stop \(preference.stopId), route \(arrival.routeShortName) at \(notificationTime)")
+            return true
         } catch {
             print("⚠️ Failed to schedule notification: \(error)")
+            return false
         }
     }
     
@@ -301,24 +316,41 @@ class NotificationService {
     
     /// Schedule all notifications based on current preferences
     func scheduleAllNotifications() async {
-        guard notificationsEnabled && authorizationStatus == .authorized else {
+        guard notificationsEnabled && canScheduleNotifications && !isScheduling else {
             return
         }
+
+        isScheduling = true
+        defer { isScheduling = false }
+
+        // Only remove arrival notifications owned by this service.
+        let identifiers = await notificationCenter.pendingNotificationRequests()
+            .filter { $0.identifier.hasPrefix("stop_") }
+            .map(\.identifier)
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
         
-        // Cancel all existing notifications
-        notificationCenter.removeAllPendingNotificationRequests()
-        
-        // Schedule notifications for each preference
-        for preference in notificationPreferences where preference.isEnabled {
-            await scheduleNotificationsForStop(preference.stopId)
+        // iOS keeps a finite pending queue. Reserve a few slots for any future
+        // non-arrival notifications and divide the remaining 60 fairly.
+        let activePreferences = notificationPreferences
+            .filter(\.isEnabled)
+            .sorted { $0.createdAt < $1.createdAt }
+        let includedPreferences = Array(activePreferences.prefix(60))
+        let perStopLimit = min(10, max(1, 60 / max(includedPreferences.count, 1)))
+
+        var scheduledCount = 0
+        for preference in includedPreferences {
+            scheduledCount += await scheduleNotificationsForStop(
+                preference.stopId,
+                limit: perStopLimit
+            )
         }
         
-        print("✅ Scheduled notifications for \(notificationPreferences.count) stops")
+        print("✅ Scheduled \(scheduledCount) arrival notifications for \(includedPreferences.count) stops")
     }
     
     /// Refresh all notifications (call this periodically or when data updates)
     func refreshNotifications() async {
-        guard notificationsEnabled && authorizationStatus == .authorized else {
+        guard notificationsEnabled && canScheduleNotifications else {
             return
         }
         
@@ -338,5 +370,36 @@ class NotificationService {
         }
         print("🔕 Cleared all notifications")
     }
+
+    func clearBadge() async {
+        do {
+            try await notificationCenter.setBadgeCount(0)
+        } catch {
+            print("⚠️ Failed to clear badge: \(error)")
+        }
+    }
 }
 
+private final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelegate {
+    @MainActor var onOpenStop: ((Int) -> Void)?
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let stopId = response.notification.request.content.userInfo["stopId"] as? Int else {
+            return
+        }
+
+        await MainActor.run {
+            onOpenStop?(stopId)
+        }
+    }
+}

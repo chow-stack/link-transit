@@ -1,7 +1,7 @@
 import Foundation
 
 /// Service hours for a route by day of week
-struct RouteServiceHours: Codable, Identifiable {
+struct RouteServiceHours: Codable, Identifiable, Sendable {
     let route_id: String
     let service_hours: ServiceHours
     
@@ -9,7 +9,7 @@ struct RouteServiceHours: Codable, Identifiable {
 }
 
 /// Service hours for each day of the week
-struct ServiceHours: Codable {
+struct ServiceHours: Codable, Sendable {
     let monday: DayHours?
     let tuesday: DayHours?
     let wednesday: DayHours?
@@ -20,7 +20,7 @@ struct ServiceHours: Codable {
 }
 
 /// Service hours for a single day
-struct DayHours: Codable {
+struct DayHours: Codable, Sendable {
     let start: String  // "HH:mm" format (24-hour)
     let end: String    // "HH:mm" format (24-hour)
     
@@ -48,4 +48,3 @@ struct DayHours: Codable {
         return String(format: "%d:%02d %@", displayHour, minute, period)
     }
 }
-

@@ -5,12 +5,11 @@ struct FavoritesView: View {
     @Environment(FavoriteStore.self) private var favoriteStore
     @Environment(DataSyncService.self) private var dataSyncService
     @State private var showingClearAlert = false
-    @State private var isLoading = true
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if isLoading {
+                if !favoriteStore.isInitialized {
                     SimpleLoadingView()
                 } else if favoriteStore.favorites.isEmpty {
                     emptyState
@@ -38,25 +37,6 @@ struct FavoritesView: View {
                         .frame(height: 60 + geometry.safeAreaInsets.bottom)
                 }
                 .frame(height: 60)
-            }
-            .task {
-                // Wait for data to be ready
-                if !dataSyncService.routes.isEmpty {
-                    // Data already loaded
-                    try? await Task.sleep(for: .milliseconds(300))
-                    withAnimation {
-                        isLoading = false
-                    }
-                } else {
-                    // Wait for data to load
-                    while dataSyncService.routes.isEmpty && !Task.isCancelled {
-                        try? await Task.sleep(for: .milliseconds(100))
-                    }
-                    try? await Task.sleep(for: .milliseconds(300))
-                    withAnimation {
-                        isLoading = false
-                    }
-                }
             }
         }
         .background(Color("Background"))

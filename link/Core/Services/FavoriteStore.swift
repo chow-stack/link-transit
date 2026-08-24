@@ -13,6 +13,8 @@ class FavoriteStore {
     
     /// Whether to show only favorites in route filtering
     var showFavoritesOnly: Bool = false
+    private(set) var isInitialized = false
+    private(set) var revision = 0
     
     /// Get all favorites
     var favorites: [Favorite] {
@@ -61,6 +63,7 @@ class FavoriteStore {
         
         self.modelContext = modelContext
         await loadFavorites()
+        isInitialized = true
     }
     
     /// Load favorites from SwiftData
@@ -70,6 +73,7 @@ class FavoriteStore {
         do {
             let descriptor = FetchDescriptor<Favorite>()
             allFavorites = try modelContext.fetch(descriptor)
+            revision &+= 1
             print("✅ Loaded \(allFavorites.count) favorites from storage")
             
             // Auto-disable favorites-only mode if no route favorites remain
@@ -77,6 +81,7 @@ class FavoriteStore {
         } catch {
             print("⚠️ Failed to load favorites: \(error)")
             allFavorites = []
+            revision &+= 1
         }
     }
     

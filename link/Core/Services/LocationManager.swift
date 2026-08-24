@@ -17,7 +17,7 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
         authorizationStatus = manager.authorizationStatus
     }
     
@@ -26,20 +26,15 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.requestWhenInUseAuthorization()
     }
     
-    /// Start updating user location and heading
+    /// Request the one location fix needed to position the initial map camera.
     func startUpdatingLocation() {
         guard isAuthorized else { return }
-        manager.startUpdatingLocation()
-        // Enable heading updates to show direction cone on map
-        if CLLocationManager.headingAvailable() {
-            manager.startUpdatingHeading()
-        }
+        manager.requestLocation()
     }
     
     /// Stop updating user location and heading
     func stopUpdatingLocation() {
         manager.stopUpdatingLocation()
-        manager.stopUpdatingHeading()
     }
     
     // MARK: - CLLocationManagerDelegate
@@ -70,4 +65,3 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         // Heading data is valid - MapKit will automatically display the cone
     }
 }
-

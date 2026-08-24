@@ -1,13 +1,15 @@
 import Foundation
 
+struct StopTimesPreparedData: Sendable {
+    let routeToStops: [String: Set<Int>]
+    let routeIdsByStop: [Int: Set<String>]
+}
+
 /// Service for processing stop times and calculating upcoming arrivals
 @MainActor
 final class StopTimesService {
     // Stop times data: tripId -> [StopTimeEntry]
     private var stopTimesData: StopTimesData = [:]
-    
-    // Reverse lookup: stopId -> [(tripId, arrivalTime)]
-    private var stopToTrips: [Int: [(tripId: String, arrivalTime: String)]] = [:]
     
     // Reference to routes and trips for enrichment
     private var routes: [Route] = []
@@ -20,6 +22,9 @@ final class StopTimesService {
     // Route to stops lookup: routeId -> Set<Int> (stop IDs)
     // Built during initialization for O(1) access in getStopsForRoutes
     private var routeToStops: [String: Set<Int>] = [:]
+
+    /// Direct stop-to-route lookup used by map rendering and stop sheets.
+    private var routeIdsByStop: [Int: Set<String>] = [:]
     
     // Real-time ETA service
     private let realtimeETAService = RealtimeETAService.shared
@@ -27,11 +32,18 @@ final class StopTimesService {
     // Cache for recent arrivals to avoid redundant fetching
     private var arrivalsCache: [Int: (arrivals: [Arrival], timestamp: Date)] = [:]
     private let cacheTimeout: TimeInterval = 10.0 // Cache arrivals for 10 seconds
+    private var latestTripUpdates: [String: TripUpdate]?
+    private var latestTripUpdateGeneration: Date?
     
     init() {}
     
     /// Initialize with stop times data and route/trip information
-    func initialize(stopTimesData: StopTimesData, routes: [Route], trips: [Trip]) {
+    func initialize(
+        stopTimesData: StopTimesData,
+        routes: [Route],
+        trips: [Trip],
+        preparedData: StopTimesPreparedData
+    ) {
         self.stopTimesData = stopTimesData
         self.routes = routes
         self.trips = trips
@@ -40,59 +52,33 @@ final class StopTimesService {
         self.routeLookup = Dictionary(uniqueKeysWithValues: routes.map { ($0.route_id, $0) })
         self.tripLookup = Dictionary(uniqueKeysWithValues: trips.map { ($0.trip_id, $0) })
         
-        // Build reverse lookup: stopId -> [(tripId, arrivalTime)]
-        buildStopToTripsLookup()
-        
-        // Build route to stops lookup for O(1) access
-        buildRouteToStopsLookup()
-        
-        // Set reference in RealtimeETAService
-        Task {
-            await realtimeETAService.setStopTimesService(self)
-        }
+        routeToStops = preparedData.routeToStops
+        routeIdsByStop = preparedData.routeIdsByStop
         
         print("✅ StopTimesService initialized with \(stopTimesData.count) trips")
     }
     
-    /// Build reverse lookup from stop ID to trips serving that stop
-    private func buildStopToTripsLookup() {
-        var lookup: [Int: [(tripId: String, arrivalTime: String)]] = [:]
-        
+    /// Prepare the large reverse indexes away from the main actor.
+    nonisolated static func prepare(
+        stopTimesData: StopTimesData,
+        trips: [Trip]
+    ) -> StopTimesPreparedData {
+        let tripRouteLookup = Dictionary(uniqueKeysWithValues: trips.map { ($0.trip_id, $0.route_id) })
+        var routeToStops: [String: Set<Int>] = [:]
+        var routeIdsByStop: [Int: Set<String>] = [:]
+
         for (tripId, stopTimes) in stopTimesData {
+            guard let routeId = tripRouteLookup[tripId] else { continue }
             for stopTime in stopTimes {
-                if lookup[stopTime.s] == nil {
-                    lookup[stopTime.s] = []
-                }
-                lookup[stopTime.s]?.append((tripId: tripId, arrivalTime: stopTime.a))
+                routeToStops[routeId, default: []].insert(stopTime.s)
+                routeIdsByStop[stopTime.s, default: []].insert(routeId)
             }
         }
-        
-        self.stopToTrips = lookup
-    }
-    
-    /// Build route to stops lookup: routeId -> Set<Int> (stop IDs)
-    /// This allows O(1) access in getStopsForRoutes instead of iterating through all stopTimesData
-    /// Optimized: Initialize sets upfront to avoid repeated nil checks
-    private func buildRouteToStopsLookup() {
-        var lookup: [String: Set<Int>] = [:]
-        
-        // Iterate through trips to get route -> stops mapping
-        for trip in trips {
-            let routeId = trip.route_id
-            // Initialize set if needed
-            if lookup[routeId] == nil {
-                lookup[routeId] = Set<Int>()
-            }
-            
-            // Get stop times for this trip and add all stop IDs
-            if let stopTimes = stopTimesData[trip.trip_id] {
-                for stopTime in stopTimes {
-                    lookup[routeId]?.insert(stopTime.s)
-                }
-            }
-        }
-        
-        self.routeToStops = lookup
+
+        return StopTimesPreparedData(
+            routeToStops: routeToStops,
+            routeIdsByStop: routeIdsByStop
+        )
     }
     
     /// Get upcoming arrivals for a specific stop with real-time ETAs
@@ -104,52 +90,39 @@ final class StopTimesService {
             return Array(cached.arrivals.prefix(maxArrivals))
         }
         
-        guard let tripsAtStop = stopToTrips[stopId] else {
-            return []
-        }
-        
-        let now = Date()
-        let calendar = Calendar.current
-        
-        // Get current date components for calculating arrival times
-        let todayComponents = calendar.dateComponents([.year, .month, .day], from: now)
-        
-        // Use pre-fetched trip updates if provided, otherwise fetch
-        let finalTripUpdates: [String: TripUpdate]?
+        // Use pre-fetched trip updates if provided, then the last published
+        // generation, and finally the shared coalesced network request.
+        let finalTripUpdates: [String: TripUpdate]
         if let tripUpdates = tripUpdates {
             finalTripUpdates = tripUpdates
+        } else if let latestTripUpdates {
+            finalTripUpdates = latestTripUpdates
         } else {
-            finalTripUpdates = try? await realtimeETAService.fetchTripUpdates()
+            finalTripUpdates = (try? await realtimeETAService.fetchTripUpdates()) ?? [:]
+            updateTripUpdates(finalTripUpdates)
         }
-        
+
+        // An unavailable initial feed must not poison the arrival cache with a
+        // ten-second empty result while the background refresh is still running.
+        guard !finalTripUpdates.isEmpty else { return [] }
+
         var arrivals: [Arrival] = []
-        
-        for (tripId, arrivalTimeString) in tripsAtStop {
-            // Parse scheduled arrival time (format: "HH:mm:ss")
-            guard let scheduledDate = parseArrivalTime(arrivalTimeString, baseComponents: todayComponents) else {
+
+        // Iterate only active realtime trips. The previous implementation walked
+        // every scheduled trip serving the stop and discarded nearly all of them.
+        for (tripId, tripUpdate) in finalTripUpdates {
+            guard let stopUpdate = tripUpdate.stopTimeUpdates.first(where: { $0.stopId == stopId }),
+                  let realtimeArrival = stopUpdate.arrivalTime,
+                  realtimeArrival.timeIntervalSinceNow >= -300,
+                  let scheduledEntry = stopTimesData[tripId]?.first(where: { $0.s == stopId }) else {
                 continue
             }
-            
-            // Get trip and route information
+
             guard let trip = tripLookup[tripId],
                   let route = routeLookup[trip.route_id] else {
                 continue
             }
-            
-            // Try to get real-time ETA from trip updates
-            var actualArrivalTime = scheduledDate
-            var isRealtime = false
-            
-            if let finalTripUpdates = finalTripUpdates,
-               let realtimeETA = await realtimeETAService.getRealtimeETA(
-                tripId: tripId,
-                stopId: stopId,
-                tripUpdates: finalTripUpdates
-               ) {
-                actualArrivalTime = realtimeETA
-                isRealtime = true
-            }
-            
+
             // Create arrival object with vehicle information
             let arrival = Arrival(
                 id: "\(tripId)-\(stopId)",
@@ -158,9 +131,9 @@ final class StopTimesService {
                 routeId: route.route_id,
                 routeShortName: route.route_short_name,
                 routeColor: route.route_color,
-                arrivalTime: actualArrivalTime,
-                scheduledTime: arrivalTimeString,
-                isRealtime: isRealtime,
+                arrivalTime: realtimeArrival,
+                scheduledTime: scheduledEntry.a,
+                isRealtime: true,
                 vehicleId: tripId, // Use tripId as vehicle identifier for now
                 busNumber: trip.block_id // Use real block_id from GTFS data
             )
@@ -168,13 +141,8 @@ final class StopTimesService {
             arrivals.append(arrival)
         }
         
-        // Filter to show only real-time arrivals (no scheduled)
-        let filteredArrivals = arrivals
-            .filter { $0.isRealtime && !$0.hasDeparted } // Only real-time buses that haven't departed
-            .sorted { $0.arrivalTime < $1.arrivalTime }
-        
         // Remove duplicates by grouping by route and bus number
-        let deduplicatedArrivals = removeDuplicates(filteredArrivals)
+        let deduplicatedArrivals = removeDuplicates(arrivals)
         
         // Cache the results
         arrivalsCache[stopId] = (deduplicatedArrivals, Date())
@@ -182,93 +150,6 @@ final class StopTimesService {
         return Array(deduplicatedArrivals.prefix(maxArrivals))
     }
 
-    /// Routing-specific arrivals: prefer realtime, fallback to scheduled if none
-    func getUpcomingArrivalsForRouting(for stopId: Int, maxArrivals: Int = 10, tripUpdates: [String: TripUpdate]? = nil) async -> [Arrival] {
-        // Reuse the computation but without enforcing realtime-only when none available
-        // Check cache first but do not reuse realtime-only cache; compute fresh
-        guard let tripsAtStop = stopToTrips[stopId] else {
-            return []
-        }
-        let now = Date()
-        let calendar = Calendar.current
-        let todayComponents = calendar.dateComponents([.year, .month, .day], from: now)
-        let finalTripUpdates: [String: TripUpdate]?
-        if let tripUpdates = tripUpdates {
-            finalTripUpdates = tripUpdates
-        } else {
-            finalTripUpdates = try? await realtimeETAService.fetchTripUpdates()
-        }
-        var arrivals: [Arrival] = []
-        for (tripId, arrivalTimeString) in tripsAtStop {
-            guard let scheduledDate = parseArrivalTime(arrivalTimeString, baseComponents: todayComponents) else { continue }
-            guard let trip = tripLookup[tripId], let route = routeLookup[trip.route_id] else { continue }
-            var actualArrivalTime = scheduledDate
-            var isRealtime = false
-            if let finalTripUpdates = finalTripUpdates,
-               let realtimeETA = await realtimeETAService.getRealtimeETA(tripId: tripId, stopId: stopId, tripUpdates: finalTripUpdates) {
-                actualArrivalTime = realtimeETA
-                isRealtime = true
-            }
-            let arrival = Arrival(
-                id: "\(tripId)-\(stopId)",
-                stopId: stopId,
-                tripId: tripId,
-                routeId: route.route_id,
-                routeShortName: route.route_short_name,
-                routeColor: route.route_color,
-                arrivalTime: actualArrivalTime,
-                scheduledTime: arrivalTimeString,
-                isRealtime: isRealtime,
-                vehicleId: tripId,
-                busNumber: trip.block_id
-            )
-            arrivals.append(arrival)
-        }
-        // Prefer realtime not departed; fallback to scheduled not departed if none
-        let realtimeArrivals = arrivals.filter { $0.isRealtime && !$0.hasDeparted }.sorted { $0.arrivalTime < $1.arrivalTime }
-        if !realtimeArrivals.isEmpty {
-            return Array(realtimeArrivals.prefix(maxArrivals))
-        }
-        let scheduledFallback = arrivals.filter { !$0.hasDeparted }.sorted { $0.arrivalTime < $1.arrivalTime }
-        return Array(scheduledFallback.prefix(maxArrivals))
-    }
-    
-    /// Parse arrival time string ("HH:mm:ss") into Date
-    /// GTFS times can exceed 24 hours (e.g., "25:30:00" for 1:30 AM next day)
-    private func parseArrivalTime(_ timeString: String, baseComponents: DateComponents) -> Date? {
-        let components = timeString.split(separator: ":").compactMap { Int($0) }
-        guard components.count == 3 else { return nil }
-        
-        var hour = components[0]
-        let minute = components[1]
-        let second = components[2]
-        
-        // Handle times >= 24:00:00 (next day service)
-        var dayOffset = 0
-        if hour >= 24 {
-            dayOffset = hour / 24
-            hour = hour % 24
-        }
-        
-        // Create date from components
-        let calendar = Calendar.current
-        var dateComponents = baseComponents
-        dateComponents.hour = hour
-        dateComponents.minute = minute
-        dateComponents.second = second
-        
-        guard var date = calendar.date(from: dateComponents) else {
-            return nil
-        }
-        
-        // Add day offset if needed
-        if dayOffset > 0 {
-            date = calendar.date(byAdding: .day, value: dayOffset, to: date) ?? date
-        }
-        
-        return date
-    }
-    
     /// Get all stops that serve the given routes
     /// Optimized to use pre-built routeToStops lookup instead of iterating through all stopTimesData
     func getStopsForRoutes(_ routeIds: Set<String>) -> Set<Int> {
@@ -287,44 +168,9 @@ final class StopTimesService {
     /// Get all routes that serve a specific stop
     /// Optimized to use tripLookup dictionary instead of filtering all trips
     func getRoutesForStop(_ stopId: Int) -> [Route] {
-        // Get all trips serving this stop
-        guard let tripsAtStop = stopToTrips[stopId] else {
-            return []
-        }
-        
-        // Get unique route IDs from these trips using tripLookup for O(1) access
-        var uniqueRouteIds = Set<String>()
-        for tripInfo in tripsAtStop {
-            if let trip = tripLookup[tripInfo.tripId] {
-                uniqueRouteIds.insert(trip.route_id)
-            }
-        }
-        
-        // Get route objects for these route IDs
-        return uniqueRouteIds.compactMap { routeLookup[$0] }
-    }
-    
-    /// Get all stops that have arrivals in the next hour
-    func getActiveStops() async -> Set<Int> {
-        let now = Date()
-        let oneHourFromNow = now.addingTimeInterval(3600)
-        
-        var activeStops = Set<Int>()
-        
-        for stopId in stopToTrips.keys {
-            let arrivals = await getUpcomingArrivals(for: stopId, maxArrivals: 1)
-            if let firstArrival = arrivals.first,
-               firstArrival.arrivalTime <= oneHourFromNow {
-                activeStops.insert(stopId)
-            }
-        }
-        
-        return activeStops
-    }
-    
-    /// Get stop times for a specific trip (ordered by sequence)
-    func getStopTimesForTrip(tripId: String) async -> [StopTimeEntry] {
-        return stopTimesData[tripId] ?? []
+        routeIdsByStop[stopId, default: []]
+            .compactMap { routeLookup[$0] }
+            .sorted { $0.route_short_name < $1.route_short_name }
     }
     
     /// Get stop sequence for a trip (stopId and arrivalTime pairs)
@@ -334,19 +180,6 @@ final class StopTimesService {
         }
         
         return stopTimes.map { (stopId: $0.s, arrivalTime: $0.a) }
-    }
-    
-    /// Get scheduled arrival time for a trip and stop
-    func getScheduledArrivalTime(tripId: String, stopId: Int) async -> Date? {
-        guard let stopTimes = stopTimesData[tripId] else {
-            return nil
-        }
-        
-        guard let stopTime = stopTimes.first(where: { $0.s == stopId }) else {
-            return nil
-        }
-        
-        return parseGTFSTime(stopTime.a)
     }
     
     /// Parse GTFS time format (HH:mm:ss) to Date
@@ -410,6 +243,17 @@ final class StopTimesService {
     /// Clear arrivals cache (useful when trip updates are refreshed)
     func clearArrivalsCache() {
         arrivalsCache.removeAll()
+    }
+
+    /// Publish a new realtime generation and invalidate derived stop results only
+    /// when the feed itself changed, not on every polling tick.
+    func updateTripUpdates(_ updates: [String: TripUpdate]) {
+        guard !updates.isEmpty else { return }
+        let generation = updates.values.map(\.timestamp).max()
+        guard generation != latestTripUpdateGeneration else { return }
+        latestTripUpdates = updates
+        latestTripUpdateGeneration = generation
+        clearArrivalsCache()
     }
 
 }

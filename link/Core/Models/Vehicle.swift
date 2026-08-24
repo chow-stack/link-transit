@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 
 /// Represents a bus vehicle with real-time position
-struct Vehicle: Identifiable, Codable, Equatable {
+struct Vehicle: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let routeId: String
     let tripId: String  // Add tripId field
@@ -44,4 +44,3 @@ struct VehicleResponse: Codable {
     let vehicles: [Vehicle]
     let timestamp: Date
 }
-

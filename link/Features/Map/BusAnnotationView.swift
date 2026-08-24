@@ -78,45 +78,27 @@ struct BusAnnotationView: View {
 /// Uses theme colors for consistent appearance in light/dark mode
 struct UniversalTimer: View {
     let lastPositionUpdate: Date
-    @State private var currentTime = Date()
-    @State private var timer: Timer?
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        let elapsed = currentTime.timeIntervalSince(lastPositionUpdate)
-        let timeString = formatElapsedTime(elapsed)
-        
-        HStack(spacing: 4) {
-            Image(systemName: "clock.fill")
-                .font(.system(size: 11))
-            Text(timeString)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = context.date.timeIntervalSince(lastPositionUpdate)
+
+            HStack(spacing: 4) {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 11))
+                Text(formatElapsedTime(elapsed))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+            }
+            .foregroundStyle(colorScheme == .dark ? .white : .black)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(Color("Background").opacity(0.9))
+                    .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+            )
         }
-        .foregroundStyle(colorScheme == .dark ? .white : .black)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(Color("Background").opacity(0.9))
-                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-        )
-        .onAppear {
-            startTimer()
-        }
-        .onDisappear {
-            stopTimer()
-        }
-    }
-    
-    private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            currentTime = Date()
-        }
-    }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
     }
     
     private func formatElapsedTime(_ elapsed: TimeInterval) -> String {
@@ -163,4 +145,3 @@ struct UniversalTimer: View {
         .padding(40)
     }
 }
-

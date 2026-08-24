@@ -1,9 +1,12 @@
 import SwiftUI
+import CoreLocation
 
 /// Settings view for app preferences and info
 struct SettingsView: View {
     @Environment(NotificationService.self) private var notificationService
     @Environment(ThemePreference.self) private var themePreference
+    @Environment(LocationManager.self) private var locationManager
+    @Environment(OnboardingStore.self) private var onboardingStore
     
     var body: some View {
         NavigationStack {
@@ -97,9 +100,26 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Notifications button (opens Settings)
                 Button {
-                    openSettings()
+                    configureLocation()
+                } label: {
+                    settingsRow(
+                        icon: locationManager.isAuthorized ? "location.fill" : "location.slash.fill",
+                        iconColor: locationManager.isAuthorized ? Color("PrimaryAccent") : .secondary,
+                        title: "Location",
+                        subtitle: locationStatusText
+                    ) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                // Request in context when undetermined; otherwise open the
+                // system settings where an existing decision can be changed.
+                Button {
+                    configureNotifications()
                 } label: {
                     settingsRow(
                         icon: notificationService.authorizationStatus == .authorized ? "bell.fill" : "bell.slash.fill",
@@ -145,6 +165,22 @@ struct SettingsView: View {
                         iconColor: Color("PrimaryAccent"),
                         title: "Rate App",
                         subtitle: "Share your feedback"
+                    ) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    onboardingStore.reset()
+                } label: {
+                    settingsRow(
+                        icon: "sparkles.rectangle.stack.fill",
+                        iconColor: Color("PrimaryAccent"),
+                        title: "View App Guide",
+                        subtitle: "Replay the introduction"
                     ) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12))
@@ -236,6 +272,16 @@ struct SettingsView: View {
             return "Unknown"
         }
     }
+
+    private var locationStatusText: String {
+        switch locationManager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: return "Enabled"
+        case .denied: return "Disabled - Tap to open Settings"
+        case .restricted: return "Restricted"
+        case .notDetermined: return "Not configured"
+        @unknown default: return "Unknown"
+        }
+    }
     
     // MARK: - Actions
     
@@ -248,11 +294,32 @@ struct SettingsView: View {
             UIApplication.shared.open(url)
         }
     }
+
+    private func configureLocation() {
+        if locationManager.authorizationStatus == .notDetermined {
+            locationManager.requestPermission()
+        } else if locationManager.isAuthorized {
+            locationManager.startUpdatingLocation()
+        } else {
+            openSettings()
+        }
+    }
+
+    private func configureNotifications() {
+        if notificationService.authorizationStatus == .notDetermined {
+            Task {
+                _ = await notificationService.requestPermission()
+            }
+        } else {
+            openSettings()
+        }
+    }
 }
 
 #Preview {
     SettingsView()
         .environment(NotificationService())
         .environment(ThemePreference())
+        .environment(LocationManager())
+        .environment(OnboardingStore(defaults: UserDefaults(suiteName: "SettingsPreview")!))
 }
-

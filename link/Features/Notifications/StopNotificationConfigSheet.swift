@@ -13,17 +13,19 @@ struct StopNotificationConfigSheet: View {
     @State private var advanceMinutes: Int = 5
     @State private var arrivals: [Arrival] = []
     @State private var isLoadingArrivals = false
+    @State private var isSaving = false
+    @State private var showingPermissionAlert = false
     
     private var existingPreference: StopNotification? {
         notificationService.getNotificationPreference(for: stop.id)
     }
     
     private var hasPermission: Bool {
-        notificationService.authorizationStatus == .authorized
+        notificationService.canScheduleNotifications
     }
     
     private var canSave: Bool {
-        !selectedRoutes.isEmpty && hasPermission
+        !selectedRoutes.isEmpty && !isSaving
     }
     
     // Discrete timing options
@@ -80,6 +82,14 @@ struct StopNotificationConfigSheet: View {
             loadExistingPreference()
             loadArrivals()
         }
+        .alert("Notifications Are Off", isPresented: $showingPermissionAlert) {
+            Button("Not Now", role: .cancel) { }
+            Button("Open Settings") {
+                openAppSettings()
+            }
+        } message: {
+            Text("Allow notifications in Settings, then return to Link to save this arrival alert.")
+        }
     }
     
     // MARK: - UI Components
@@ -104,34 +114,38 @@ struct StopNotificationConfigSheet: View {
     
     private var permissionBanner: some View {
         HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: notificationService.authorizationStatus == .notDetermined ? "bell.badge.fill" : "exclamationmark.triangle.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(.orange)
+                .foregroundStyle(notificationService.authorizationStatus == .notDetermined ? Color("PrimaryAccent") : .orange)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Permission Required")
+                Text(notificationService.authorizationStatus == .notDetermined ? "Ready When You Are" : "Permission Required")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
                 
-                Text("Enable notifications in Settings to receive alerts")
+                Text(notificationService.authorizationStatus == .notDetermined
+                     ? "Link will ask for permission when you save this alert."
+                     : "Enable notifications in Settings to receive alerts.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
             
-            Button("Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
+            if notificationService.authorizationStatus == .denied {
+                Button("Settings") {
+                    openAppSettings()
                 }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color("PrimaryAccent"))
             }
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(Color("PrimaryAccent"))
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.orange.opacity(0.1))
+                .fill(notificationService.authorizationStatus == .notDetermined
+                      ? Color("PrimaryAccent").opacity(0.08)
+                      : Color.orange.opacity(0.1))
         )
     }
     
@@ -290,24 +304,18 @@ struct StopNotificationConfigSheet: View {
     private var saveButton: some View {
         Button {
             Task {
-                // Haptic feedback
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
-                
-                await notificationService.saveNotificationPreference(
-                    stopId: stop.id,
-                    stopName: stop.name,
-                    enabledRouteIds: selectedRoutes,
-                    advanceMinutes: advanceMinutes
-                )
-                
-                dismiss()
+                await saveAlert()
             }
         } label: {
             HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                Text("Save Notification")
+                if isSaving {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                Text(isSaving ? "Saving…" : "Save Arrival Alert")
                     .font(.system(size: 16, weight: .semibold))
             }
             .foregroundStyle(.white)
@@ -372,6 +380,37 @@ struct StopNotificationConfigSheet: View {
             )
             isLoadingArrivals = false
         }
+    }
+
+    private func saveAlert() async {
+        isSaving = true
+        defer { isSaving = false }
+
+        if !notificationService.canScheduleNotifications {
+            let granted = await notificationService.requestPermission()
+            guard granted else {
+                showingPermissionAlert = true
+                return
+            }
+        }
+
+        // Saving an alert is an explicit opt-in, including after the in-app
+        // global switch was previously turned off.
+        notificationService.notificationsEnabled = true
+        await notificationService.saveNotificationPreference(
+            stopId: stop.id,
+            stopName: stop.name,
+            enabledRouteIds: selectedRoutes,
+            advanceMinutes: advanceMinutes
+        )
+
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        dismiss()
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 

@@ -15,15 +15,15 @@ class DataSyncService {
     var stops: [Stop] = []
     var routeServiceHours: [RouteServiceHours] = []
     
-    // Performance optimization: Trip lookup dictionary
+    // Static lookup dictionaries built once during initialization
     private var tripLookup: [String: String] = [:]
-    
-    // Performance optimization: Cached route polylines
-    private var cachedPolylines: [RoutePolyline] = []
-    private var lastPolylineUpdate: Date?
+    private var routeLookup: [String: Route] = [:]
+    private var routePolylinesByRouteId: [String: [RoutePolyline]] = [:]
     
     // Realtime data (refreshed periodically)
     var vehicles: [Vehicle] = []
+    private(set) var dataVersion = 0
+    private(set) var isStaticDataReady = false
     
     // Track previous vehicles to detect changes
     private var previousVehicles: [Vehicle] = []
@@ -41,8 +41,8 @@ class DataSyncService {
     let stopTimesService = StopTimesService()
     
     // Cached trip updates for better performance
-    private var cachedTripUpdates: [String: TripUpdate] = [:]
-    private var lastTripUpdateTimestamp: Date?
+    private var cachedTripUpdates: [String: TripUpdate]?
+    private(set) var tripUpdatesGeneration: Date?
     
     private let realtimeService = RealtimeService.shared
     private let realtimeETAService = RealtimeETAService.shared
@@ -50,6 +50,8 @@ class DataSyncService {
     
     // Auto-refresh configuration
     private var refreshTask: Task<Void, Never>?
+    private var initialRefreshTask: Task<Void, Never>?
+    private var isRefreshing = false
     private let refreshInterval: TimeInterval = APIConfig.vehicleRefreshInterval
     private var retryDelay: TimeInterval = 5.0
     private let maxRetryDelay: TimeInterval = 20.0
@@ -66,34 +68,55 @@ class DataSyncService {
         // Skip if already initialized
         guard !isInitialized else { return }
         
-        // Load static data from bundle (fast, local - doesn't require network)
-        routes = staticDataService.loadRoutes()
-        shapes = staticDataService.loadShapes()
-        trips = staticDataService.loadTrips()
-        stops = staticDataService.loadStops()
-        routeServiceHours = staticDataService.loadRouteServiceHours()
-        
-        let stopTimesData = staticDataService.loadStopTimes()
+        // Decode bundled data and build its largest indexes away from the main
+        // actor so launch remains responsive on slower devices.
+        let snapshot = await staticDataService.loadAll()
+        let preparedStopTimes = await Task.detached(priority: .userInitiated) {
+            StopTimesService.prepare(stopTimesData: snapshot.stopTimes, trips: snapshot.trips)
+        }.value
+
+        routes = snapshot.routes
+        shapes = snapshot.shapes
+        trips = snapshot.trips
+        stops = snapshot.stops
+        routeServiceHours = snapshot.routeServiceHours
         
         // Build trip lookup dictionary for O(1) access
         tripLookup = Dictionary(uniqueKeysWithValues: trips.map { ($0.trip_id, $0.route_id) })
+        routeLookup = Dictionary(uniqueKeysWithValues: routes.map { ($0.route_id, $0) })
+        buildRoutePolylineLookup()
         
         // Initialize stop times service
-        stopTimesService.initialize(stopTimesData: stopTimesData, routes: routes, trips: trips)
+        stopTimesService.initialize(
+            stopTimesData: snapshot.stopTimes,
+            routes: routes,
+            trips: trips,
+            preparedData: preparedStopTimes
+        )
+        await realtimeETAService.setStopTimesData(snapshot.stopTimes)
         
         print("✅ Loaded static data: \(routes.count) routes, \(trips.count) trips, \(stops.count) stops")
         print("🔍 Built trip lookup dictionary with \(tripLookup.count) entries")
         
         // Mark as initialized BEFORE starting realtime refresh
         // This allows the UI to proceed immediately while realtime data loads in background
-        isInitialized = true
+        isStaticDataReady = !routes.isEmpty
+        isInitialized = isStaticDataReady
+        dataVersion &+= 1
         
         // Start auto-refresh for realtime data (runs asynchronously, doesn't block initialization)
-        startAutoRefresh()
+        if isStaticDataReady {
+            startAutoRefresh()
+        }
     }
     
     /// Manually refresh realtime data
     func refresh(forceRefresh: Bool = false) async {
+        // Drop duplicate manual/reconnection/timer refreshes while the shared
+        // request is already in flight.
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         errorMessage = nil
         
         do {
@@ -107,9 +130,10 @@ class DataSyncService {
             let tripUpdates = try? await tripUpdatesTask
             
             // Cache trip updates
-            if let tripUpdates = tripUpdates {
+            if let tripUpdates, !tripUpdates.isEmpty {
                 cachedTripUpdates = tripUpdates
-                lastTripUpdateTimestamp = Date()
+                tripUpdatesGeneration = tripUpdates.values.map(\.timestamp).max()
+                stopTimesService.updateTripUpdates(tripUpdates)
             }
             
             // Performance timing - Route resolution
@@ -138,7 +162,11 @@ class DataSyncService {
             
             // Update vehicles with smart timestamp management
             let updatedVehicles = updateVehicleTimestamps(fetchedVehicles)
-            vehicles = updatedVehicles
+            let vehiclesChanged = updatedVehicles != vehicles
+            if vehiclesChanged {
+                vehicles = updatedVehicles
+                dataVersion &+= 1
+            }
             previousVehicles = fetchedVehicles
             lastUpdated = Date()
             isOffline = false
@@ -164,7 +192,8 @@ class DataSyncService {
         
         // Start initial fetch in background task (non-blocking)
         // This allows the UI to proceed immediately after static data loads
-        Task { [weak self] in
+        initialRefreshTask?.cancel()
+        initialRefreshTask = Task { [weak self] in
             await self?.refresh()
         }
         
@@ -184,9 +213,16 @@ class DataSyncService {
             }
         }
     }
+
+    func resumeAutoRefreshIfNeeded() {
+        guard isInitialized, refreshTask == nil else { return }
+        startAutoRefresh()
+    }
     
     /// Stop automatic refresh
     func stopAutoRefresh() {
+        initialRefreshTask?.cancel()
+        initialRefreshTask = nil
         refreshTask?.cancel()
         refreshTask = nil
     }
@@ -195,9 +231,10 @@ class DataSyncService {
     private func updateVehicleTimestamps(_ newVehicles: [Vehicle]) -> [Vehicle] {
         var hasPositionChange = false
         
+        let previousById = Dictionary(uniqueKeysWithValues: previousVehicles.map { ($0.id, $0) })
         let updatedVehicles = newVehicles.map { newVehicle in
             // Find previous vehicle with same ID
-            if let previousVehicle = previousVehicles.first(where: { $0.id == newVehicle.id }) {
+            if let previousVehicle = previousById[newVehicle.id] {
                 // Check if data has actually changed
                 if newVehicle.hasChanged(from: previousVehicle) {
                     // Data changed, update timestamp
@@ -243,25 +280,13 @@ class DataSyncService {
     }
     
     /// Get cached trip updates (used by sheets to avoid redundant fetching)
-    func getCachedTripUpdates() -> [String: TripUpdate] {
+    func getCachedTripUpdates() -> [String: TripUpdate]? {
         cachedTripUpdates
-    }
-    
-    /// Refresh trip updates in background
-    func refreshTripUpdates() async {
-        do {
-            let updates = try await realtimeETAService.fetchTripUpdates(forceRefresh: false)
-            cachedTripUpdates = updates
-            lastTripUpdateTimestamp = Date()
-        } catch {
-            // Silently fail - trip updates are not critical
-            print("⚠️ Failed to fetch trip updates: \(error)")
-        }
     }
     
     /// Get route by ID
     func route(for routeId: String) -> Route? {
-        routes.first { $0.route_id == routeId }
+        routeLookup[routeId]
     }
     
     /// Get enriched vehicle data with route information
@@ -277,64 +302,36 @@ class DataSyncService {
     
     /// Get route polylines for all active routes
     func getActiveRoutePolylines() -> [RoutePolyline] {
-        // Performance optimization: Cache polylines for 30 seconds
-        if let lastUpdate = lastPolylineUpdate,
-           Date().timeIntervalSince(lastUpdate) < 30.0,
-           !cachedPolylines.isEmpty {
-            return cachedPolylines
-        }
-        
-        let polylineStart = Date()
-        // Get unique route IDs from active vehicles
         let activeRouteIds = Set(vehicles.map { $0.routeId })
-        
-        // For each active route, get all its shapes
-        var polylines: [RoutePolyline] = []
-        
-        for routeId in activeRouteIds {
-            guard let route = routes.first(where: { $0.route_id == routeId }) else {
-                continue
-            }
-            
-            // Get all trips for this route to find shape_ids
-            let routeTrips = trips.filter { $0.route_id == routeId }
-            let shapeIds = Set(routeTrips.compactMap { $0.shape_id })
-            
-            let routeColor = route.route_color != nil && !route.route_color!.isEmpty
-                ? Color(hex: route.route_color!)
-                : Color.blue
-            
-            // For each shape, create a polyline
-            for shapeId in shapeIds {
-                let shapePoints = shapes
-                    .filter { $0.shape_id == shapeId }
-                    .sorted { $0.shape_pt_sequence < $1.shape_pt_sequence }
-                
-                if !shapePoints.isEmpty {
-                    let coordinates = shapePoints.map { shape in
-                        CLLocationCoordinate2D(
-                            latitude: shape.shape_pt_lat,
-                            longitude: shape.shape_pt_lon
-                        )
-                    }
-                    
-                    polylines.append(RoutePolyline(
-                        id: shapeId,
-                        coordinates: coordinates,
-                        color: routeColor,
-                        routeName: route.route_short_name
-                    ))
-                }
+        return activeRouteIds.flatMap { routePolylinesByRouteId[$0] ?? [] }
+    }
+
+    /// Precompute shape grouping and sorting once. Realtime refreshes then only
+    /// select the already-built polylines for currently active routes.
+    private func buildRoutePolylineLookup() {
+        let shapesById = Dictionary(grouping: shapes, by: \.shape_id)
+            .mapValues { $0.sorted { $0.shape_pt_sequence < $1.shape_pt_sequence } }
+        let tripsByRoute = Dictionary(grouping: trips, by: \.route_id)
+        var result: [String: [RoutePolyline]] = [:]
+
+        for route in routes {
+            let shapeIds = Set(tripsByRoute[route.route_id, default: []].compactMap(\.shape_id))
+            let routeColor = route.route_color.flatMap { $0.isEmpty ? nil : Color(hex: $0) } ?? .blue
+            result[route.route_id] = shapeIds.compactMap { shapeId in
+                guard let shapePoints = shapesById[shapeId], !shapePoints.isEmpty else { return nil }
+                return RoutePolyline(
+                    id: shapeId,
+                    coordinates: shapePoints.map {
+                        CLLocationCoordinate2D(latitude: $0.shape_pt_lat, longitude: $0.shape_pt_lon)
+                    },
+                    color: routeColor,
+                    routeId: route.route_id,
+                    routeName: route.route_short_name
+                )
             }
         }
-        
-        // Cache the results
-        cachedPolylines = polylines
-        lastPolylineUpdate = Date()
-        
-        _ = Date().timeIntervalSince(polylineStart)
-        
-        return polylines
+
+        routePolylinesByRouteId = result
     }
     
     // Note: deinit for @MainActor classes cannot call async methods
@@ -393,6 +390,6 @@ struct RoutePolyline: Identifiable {
     let id: String // shape_id
     let coordinates: [CLLocationCoordinate2D]
     let color: Color
+    let routeId: String
     let routeName: String
 }
-

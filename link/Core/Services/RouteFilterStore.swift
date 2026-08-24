@@ -8,6 +8,8 @@ import Observation
 class RouteFilterStore {
     private var modelContext: ModelContext?
     private var routes: [Route] = []
+    private var persistedRouteIds: Set<String> = []
+    private var hasPersistedFilters = false
     
     /// Active filters stored in memory for quick access
     var enabledRouteIds: Set<String> = []
@@ -78,9 +80,17 @@ class RouteFilterStore {
         
         // Load saved filters from SwiftData
         await loadFilters()
-        
-        // If no filters exist, enable all routes by default
-        if enabledRouteIds.isEmpty {
+
+        let currentRouteIds = Set(routes.map { $0.route_id })
+        if hasPersistedFilters {
+            // Remove routes retired by a GTFS update and enable newly introduced
+            // routes by default. Existing user selections remain unchanged.
+            enabledRouteIds.formIntersection(currentRouteIds)
+            enabledRouteIds.formUnion(currentRouteIds.subtracting(persistedRouteIds))
+            await saveAllFilters()
+        } else {
+            // A genuinely new install defaults to the full network. Do not use an
+            // empty enabled set as the signal: users are allowed to deselect all.
             enabledRouteIds = Set(routes.map { $0.route_id })
             await saveAllFilters()
         }
@@ -93,7 +103,10 @@ class RouteFilterStore {
         do {
             let descriptor = FetchDescriptor<RouteFilter>()
             let filters = try modelContext.fetch(descriptor)
-            
+
+            hasPersistedFilters = !filters.isEmpty
+            persistedRouteIds = Set(filters.map { $0.routeId })
+
             // Build set of enabled route IDs
             enabledRouteIds = Set(filters.filter { $0.isEnabled }.map { $0.routeId })
             
@@ -101,6 +114,8 @@ class RouteFilterStore {
         } catch {
             print("⚠️ Failed to load route filters: \(error)")
             // Default to all routes enabled
+            hasPersistedFilters = false
+            persistedRouteIds = []
             enabledRouteIds = Set(routes.map { $0.route_id })
         }
     }
@@ -191,4 +206,3 @@ class RouteFilterStore {
         enabledRouteIds.contains(routeId)
     }
 }
-
