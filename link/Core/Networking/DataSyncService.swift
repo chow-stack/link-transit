@@ -67,7 +67,26 @@ class DataSyncService {
     func initialize() async {
         // Skip if already initialized
         guard !isInitialized else { return }
-        
+
+        // Start the realtime network downloads immediately, in parallel with
+        // static decoding below, instead of only after static data is ready.
+        // Without this, the first stop/bus sheet tapped before the background
+        // refresh finishes has to perform its own cold fetch and feels slow;
+        // every tap after that hits the now-warm cache. Vehicle positions have
+        // no static-data dependency; trip updates only need `stopTimesData`
+        // for the final mapping step, so the download+decode can start early
+        // and the mapping happens once static data is ready below.
+        // Explicit .userInitiated so these compete fairly for the cooperative
+        // thread pool with the .userInitiated static-decode work below,
+        // instead of relying on ambient priority inheritance from whatever
+        // called initialize().
+        Task(priority: .userInitiated) { [realtimeService] in
+            _ = try? await realtimeService.fetchVehicles()
+        }
+        Task(priority: .userInitiated) { [realtimeETAService] in
+            await realtimeETAService.prefetchTripUpdates()
+        }
+
         // Decode bundled data and build its largest indexes away from the main
         // actor so launch remains responsive on slower devices.
         let snapshot = await staticDataService.loadAll()
@@ -91,13 +110,11 @@ class DataSyncService {
             stopTimesData: snapshot.stopTimes,
             routes: routes,
             trips: trips,
+            serviceCalendar: snapshot.serviceCalendar,
             preparedData: preparedStopTimes
         )
         await realtimeETAService.setStopTimesData(snapshot.stopTimes)
-        
-        print("✅ Loaded static data: \(routes.count) routes, \(trips.count) trips, \(stops.count) stops")
-        print("🔍 Built trip lookup dictionary with \(tripLookup.count) entries")
-        
+
         // Mark as initialized BEFORE starting realtime refresh
         // This allows the UI to proceed immediately while realtime data loads in background
         isStaticDataReady = !routes.isEmpty
@@ -152,6 +169,11 @@ class DataSyncService {
                             longitude: vehicle.longitude,
                             heading: vehicle.heading,
                             speed: vehicle.speed,
+                            vehicleLabel: vehicle.vehicleLabel,
+                            currentStopSequence: vehicle.currentStopSequence,
+                            currentStopId: vehicle.currentStopId,
+                            currentStatus: vehicle.currentStatus,
+                            serviceDateKey: vehicle.serviceDateKey,
                             lastUpdated: vehicle.lastUpdated
                         )
                     }
@@ -248,7 +270,12 @@ class DataSyncService {
                         longitude: newVehicle.longitude,
                         heading: newVehicle.heading,
                         speed: newVehicle.speed,
-                        lastUpdated: Date()
+                        vehicleLabel: newVehicle.vehicleLabel,
+                        currentStopSequence: newVehicle.currentStopSequence,
+                        currentStopId: newVehicle.currentStopId,
+                        currentStatus: newVehicle.currentStatus,
+                        serviceDateKey: newVehicle.serviceDateKey,
+                        lastUpdated: newVehicle.lastUpdated
                     )
                 } else {
                     // Data unchanged, keep previous timestamp
@@ -266,7 +293,12 @@ class DataSyncService {
                     longitude: newVehicle.longitude,
                     heading: newVehicle.heading,
                     speed: newVehicle.speed,
-                    lastUpdated: Date()
+                    vehicleLabel: newVehicle.vehicleLabel,
+                    currentStopSequence: newVehicle.currentStopSequence,
+                    currentStopId: newVehicle.currentStopId,
+                    currentStatus: newVehicle.currentStatus,
+                    serviceDateKey: newVehicle.serviceDateKey,
+                    lastUpdated: newVehicle.lastUpdated
                 )
             }
         }

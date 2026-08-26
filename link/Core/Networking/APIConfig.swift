@@ -14,9 +14,13 @@ struct APIConfig {
     static let requestTimeout: TimeInterval = 15.0
     static let resourceTimeout: TimeInterval = 20.0
     
-    /// Retry configuration
+    /// Retry configuration. Backoff is exponential starting from this base
+    /// (0.5s, 1.0s, ...) rather than a large fixed delay: a cold-connection
+    /// hiccup on the first attempt (radio wake, TLS handshake) usually
+    /// resolves itself immediately on retry, so a long fixed wait before
+    /// retrying only adds dead time to the first realtime fetch of a launch.
     static let maxRetries = 3
-    static let retryDelay: TimeInterval = 2.0
+    static let retryDelay: TimeInterval = 0.5
     
     /// Refresh intervals (in seconds)
     static let vehicleRefreshInterval: TimeInterval = 15.0

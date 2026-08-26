@@ -316,11 +316,12 @@ struct StopLoadingView: View {
     let stopName: String
     @State private var isAnimating = false
     @State private var showContent = false
-    
+    @State private var showLongWaitHint = false
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            
+
             // Stop icon with pulse
             ZStack {
                 Circle()
@@ -334,7 +335,7 @@ struct StopLoadingView: View {
                             .repeatForever(autoreverses: false),
                         value: isAnimating
                     )
-                
+
                 Image(systemName: "mappin.circle.fill")
                     .font(.system(size: 40, weight: .semibold))
                     .foregroundStyle(Color("PrimaryAccent"))
@@ -342,7 +343,7 @@ struct StopLoadingView: View {
                     .opacity(showContent ? 1.0 : 0.0)
                     .animation(.spring(response: 0.6, dampingFraction: 0.6), value: showContent)
             }
-            
+
             // Stop name and status
             VStack(spacing: 12) {
                 Text(stopName)
@@ -352,29 +353,41 @@ struct StopLoadingView: View {
                     .lineLimit(2)
                     .opacity(showContent ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: showContent)
-                
+
                 HStack(spacing: 6) {
                     ProgressView()
                         .scaleEffect(0.9)
                         .tint(Color("PrimaryAccent"))
-                    
+
                     Text("Loading arrivals...")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 .opacity(showContent ? 1 : 0)
                 .animation(.easeIn(duration: 0.3).delay(0.1), value: showContent)
+
+                Text("Connecting to live bus data…")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .opacity(showLongWaitHint ? 1 : 0)
+                    .animation(.easeIn(duration: 0.3), value: showLongWaitHint)
             }
             .padding(.horizontal, 32)
-            
+
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color("Background"))
         .onAppear {
             isAnimating = true
             withAnimation {
                 showContent = true
             }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            showLongWaitHint = true
         }
     }
 }
@@ -386,11 +399,12 @@ struct BusLoadingView: View {
     let routeColor: Color
     @State private var isAnimating = false
     @State private var showContent = false
-    
+    @State private var showLongWaitHint = false
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            
+
             // Bus icon with pulse
             ZStack {
                 Circle()
@@ -404,7 +418,7 @@ struct BusLoadingView: View {
                             .repeatForever(autoreverses: false),
                         value: isAnimating
                     )
-                
+
                 Circle()
                     .fill(routeColor)
                     .frame(width: 56, height: 56)
@@ -417,7 +431,7 @@ struct BusLoadingView: View {
                     .opacity(showContent ? 1.0 : 0.0)
                     .animation(.spring(response: 0.6, dampingFraction: 0.6), value: showContent)
             }
-            
+
             // Route name and status
             VStack(spacing: 12) {
                 Text(routeLongName)
@@ -427,29 +441,41 @@ struct BusLoadingView: View {
                     .lineLimit(2)
                     .opacity(showContent ? 1 : 0)
                     .animation(.easeIn(duration: 0.3), value: showContent)
-                
+
                 HStack(spacing: 6) {
                     ProgressView()
                         .scaleEffect(0.9)
                         .tint(routeColor)
-                    
+
                     Text("Loading bus details...")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 .opacity(showContent ? 1 : 0)
                 .animation(.easeIn(duration: 0.3).delay(0.1), value: showContent)
+
+                Text("Connecting to live bus data…")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .opacity(showLongWaitHint ? 1 : 0)
+                    .animation(.easeIn(duration: 0.3), value: showLongWaitHint)
             }
             .padding(.horizontal, 32)
-            
+
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color("Background"))
         .onAppear {
             isAnimating = true
             withAnimation {
                 showContent = true
             }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            showLongWaitHint = true
         }
     }
 }

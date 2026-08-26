@@ -64,13 +64,16 @@ struct BusAnnotationView: View {
                 .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
             }
         }
-        .onTapGesture {
-            // Haptic feedback for tap interaction
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
-            
-            onTap()
-        }
+        // `.simultaneousGesture` (not `.onTapGesture`) so a touch that starts on a bus
+        // doesn't claim exclusivity and block the map's own pinch/pan gesture recognizers.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+
+                onTap()
+            }
+        )
     }
 }
 
@@ -78,24 +81,24 @@ struct BusAnnotationView: View {
 /// Uses theme colors for consistent appearance in light/dark mode
 struct UniversalTimer: View {
     let lastPositionUpdate: Date
-    @Environment(\.colorScheme) private var colorScheme
-    
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let elapsed = context.date.timeIntervalSince(lastPositionUpdate)
 
             HStack(spacing: 4) {
                 Image(systemName: "clock.fill")
-                    .font(.system(size: 11))
+                    .font(.caption)
                 Text(formatElapsedTime(elapsed))
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(.caption.weight(.medium))
+                    .monospacedDigit()
             }
-            .foregroundStyle(colorScheme == .dark ? .white : .black)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 Capsule()
-                    .fill(Color("Background").opacity(0.9))
+                    .fill(Color("Background"))
                     .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
             )
         }

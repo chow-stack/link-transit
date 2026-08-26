@@ -5,6 +5,7 @@ import CoreLocation
 struct SettingsView: View {
     @Environment(NotificationService.self) private var notificationService
     @Environment(ThemePreference.self) private var themePreference
+    @Environment(MapAppPreference.self) private var mapAppPreference
     @Environment(LocationManager.self) private var locationManager
     @Environment(OnboardingStore.self) private var onboardingStore
     
@@ -92,14 +93,14 @@ struct SettingsView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(themePreference.displayName)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 10))
+                                .font(.caption2)
                         }
                         .foregroundStyle(Color("PrimaryAccent"))
                     }
                 }
-                
+
                 Button {
                     configureLocation()
                 } label: {
@@ -110,11 +111,41 @@ struct SettingsView: View {
                         subtitle: locationStatusText
                     ) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
+
+                settingsRow(
+                    icon: "map.fill",
+                    iconColor: Color("PrimaryAccent"),
+                    title: "Transit Directions",
+                    subtitle: "Preferred map app"
+                ) {
+                    Menu {
+                        ForEach(PreferredMapApp.allCases) { app in
+                            Button {
+                                mapAppPreference.selectedApp = app
+                            } label: {
+                                HStack {
+                                    Text(app.displayName)
+                                    if mapAppPreference.selectedApp == app {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(mapAppPreference.selectedApp.displayName)
+                                .font(.subheadline.weight(.semibold))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(Color("PrimaryAccent"))
+                    }
+                }
 
                 // Request in context when undetermined; otherwise open the
                 // system settings where an existing decision can be changed.
@@ -128,7 +159,7 @@ struct SettingsView: View {
                         subtitle: notificationStatusText
                     ) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -136,10 +167,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background").opacity(0.8))
-        )
+        .appSheetCard(cornerRadius: 16)
         .padding(.horizontal, 20)
     }
     
@@ -166,12 +194,12 @@ struct SettingsView: View {
                         subtitle: "How Link handles your data"
                     ) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
-                
+
                 // Rate App
                 Button {
                     requestAppReview()
@@ -183,7 +211,7 @@ struct SettingsView: View {
                         subtitle: "Share your feedback"
                     ) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -199,7 +227,7 @@ struct SettingsView: View {
                         subtitle: "Replay the introduction"
                     ) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -207,27 +235,24 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background").opacity(0.8))
-        )
+        .appSheetCard(cornerRadius: 16)
         .padding(.horizontal, 20)
     }
-    
+
     // MARK: - Helper Views
-    
+
     private func sectionHeader(title: String, icon: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color("PrimaryAccent"))
-            
+
             Text(title)
-                .font(.system(size: 20, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(.primary)
         }
     }
-    
+
     private func settingsRow(
         icon: String,
         iconColor: Color,
@@ -235,32 +260,29 @@ struct SettingsView: View {
         subtitle: String,
         @ViewBuilder trailing: () -> some View = { EmptyView() }
     ) -> some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 20))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(iconColor)
                 .frame(width: 32)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                
+
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             trailing()
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color("Background").opacity(0.8))
-        )
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     
     // MARK: - Computed Properties
@@ -315,6 +337,7 @@ struct SettingsView: View {
             locationManager.requestPermission()
         } else if locationManager.isAuthorized {
             locationManager.startUpdatingLocation()
+            locationManager.startUpdatingHeading()
         } else {
             openSettings()
         }
@@ -335,6 +358,7 @@ struct SettingsView: View {
     SettingsView()
         .environment(NotificationService())
         .environment(ThemePreference())
+        .environment(MapAppPreference(defaults: UserDefaults(suiteName: "SettingsMapPreview")!))
         .environment(LocationManager())
         .environment(OnboardingStore(defaults: UserDefaults(suiteName: "SettingsPreview")!))
 }

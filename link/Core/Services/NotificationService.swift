@@ -82,7 +82,6 @@ class NotificationService {
         do {
             let descriptor = FetchDescriptor<StopNotification>()
             notificationPreferences = try modelContext.fetch(descriptor)
-            print("✅ Loaded \(notificationPreferences.count) notification preferences")
         } catch {
             print("⚠️ Failed to load notification preferences: \(error)")
             notificationPreferences = []
@@ -114,7 +113,6 @@ class NotificationService {
             
             if granted {
                 notificationsEnabled = true
-                print("✅ Notification permission granted")
             } else {
                 print("⚠️ Notification permission denied")
             }
@@ -165,7 +163,6 @@ class NotificationService {
             do {
                 try modelContext.save()
                 await loadNotificationPreferences()
-                print("✅ Updated notification preference for stop \(stopId)")
             } catch {
                 print("⚠️ Failed to update notification preference: \(error)")
             }
@@ -182,7 +179,6 @@ class NotificationService {
                 modelContext.insert(preference)
                 try modelContext.save()
                 await loadNotificationPreferences()
-                print("✅ Created notification preference for stop \(stopId)")
             } catch {
                 print("⚠️ Failed to create notification preference: \(error)")
             }
@@ -209,8 +205,6 @@ class NotificationService {
                 
                 // Cancel pending notifications for this stop
                 await cancelNotificationsForStop(stopId)
-                
-                print("✅ Removed notification preference for stop \(stopId)")
             } catch {
                 print("⚠️ Failed to remove notification preference: \(error)")
             }
@@ -224,7 +218,6 @@ class NotificationService {
         if !notificationsEnabled {
             // Cancel all pending notifications
             notificationCenter.removeAllPendingNotificationRequests()
-            print("🔕 Disabled all notifications")
         } else if canScheduleNotifications {
             // Reschedule all notifications
             Task {
@@ -296,7 +289,6 @@ class NotificationService {
         // Schedule notification
         do {
             try await notificationCenter.add(request)
-            print("✅ Scheduled notification for stop \(preference.stopId), route \(arrival.routeShortName) at \(notificationTime)")
             return true
         } catch {
             print("⚠️ Failed to schedule notification: \(error)")
@@ -311,7 +303,6 @@ class NotificationService {
             .map { $0.identifier }
         
         notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
-        print("🔕 Cancelled \(identifiers.count) notifications for stop \(stopId)")
     }
     
     /// Schedule all notifications based on current preferences
@@ -337,15 +328,12 @@ class NotificationService {
         let includedPreferences = Array(activePreferences.prefix(60))
         let perStopLimit = min(10, max(1, 60 / max(includedPreferences.count, 1)))
 
-        var scheduledCount = 0
         for preference in includedPreferences {
-            scheduledCount += await scheduleNotificationsForStop(
+            _ = await scheduleNotificationsForStop(
                 preference.stopId,
                 limit: perStopLimit
             )
         }
-        
-        print("✅ Scheduled \(scheduledCount) arrival notifications for \(includedPreferences.count) stops")
     }
     
     /// Refresh all notifications (call this periodically or when data updates)
@@ -368,7 +356,6 @@ class NotificationService {
                 print("⚠️ Failed to set badge count: \(error)")
             }
         }
-        print("🔕 Cleared all notifications")
     }
 
     func clearBadge() async {

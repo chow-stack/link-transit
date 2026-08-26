@@ -19,9 +19,7 @@ struct ContentView: View {
     @State private var hasInitiallyPositioned = false
     @State private var showingAlertsSheet = false
     @State private var selectedStop: Stop?
-    @State private var showingStopDetails = false
     @State private var selectedBus: EnrichedVehicle?
-    @State private var showingBusInfo = false
     @State private var isLoading = true
     @State private var hasInitialized = false
     @State private var staticDataLoadFailed = false
@@ -35,7 +33,6 @@ struct ContentView: View {
             } else if staticDataLoadFailed {
                 dataLoadFailureView
             } else {
-                // Show no buses view or map content
                 // Always show mapContent when buses exist (even if filtered),
                 // so users can access the filter button to reselect routes
                 if viewModel?.hasNoBuses == true {
@@ -55,6 +52,7 @@ struct ContentView: View {
             }
             
             startLocationIfAuthorized()
+            locationManager.startUpdatingHeading()
             positionMapAtCurrentLocationIfNeeded()
             
             // Set up map navigation callback
@@ -114,13 +112,13 @@ struct ContentView: View {
         .sheet(isPresented: $showingFilterSheet) {
             RouteFilterView(filterStore: filterStore)
         }
-        .sheet(isPresented: $showingStopDetails) {
-            if let stop = selectedStop, let vm = viewModel {
+        .sheet(item: $selectedStop) { stop in
+            if let vm = viewModel {
                 StopDetailsSheetLoader(viewModel: vm, stop: stop)
             }
         }
-        .sheet(isPresented: $showingBusInfo) {
-            if let bus = selectedBus, let vm = viewModel {
+        .sheet(item: $selectedBus) { bus in
+            if let vm = viewModel {
                 BusInfoSheetLoader(viewModel: vm, bus: bus)
             }
         }
@@ -136,8 +134,12 @@ struct ContentView: View {
             // Main map view
             GeometryReader { geometry in
                 Map(position: $cameraPosition) {
-                // User location always shown
-                UserAnnotation()
+                // User location, with a heading cone like Google Maps
+                if let userLocation = locationManager.userLocation {
+                    Annotation("", coordinate: userLocation) {
+                        UserLocationAnnotationView(heading: locationManager.heading)
+                    }
+                }
 
                 // Route polylines (colored lines for each route)
                 ForEach(viewModel?.routePolylines ?? []) { polyline in
@@ -148,7 +150,11 @@ struct ContentView: View {
                 // Stop annotations (color-coded by route)
                 ForEach(viewModel?.stops ?? []) { stopWithColor in
                     Annotation("", coordinate: stopWithColor.coordinate) {
-                        StopAnnotationView(stop: stopWithColor.stop, routeColor: stopWithColor.routeColor) {
+                        StopAnnotationView(
+                            stop: stopWithColor.stop,
+                            routeColors: stopWithColor.routeColors,
+                            routeShortNames: stopWithColor.routeShortNames
+                        ) {
                             self.navigateToStop(stopWithColor.stop)
                         }
                     }
@@ -293,7 +299,7 @@ struct ContentView: View {
             return
         }
         await vm.initialize()
-        
+
         // Initialize stores with loaded routes
         // Initialize critical services in parallel (needed for map to display)
         // Services will skip if already initialized
@@ -307,7 +313,7 @@ struct ContentView: View {
                 await filterStore.initialize(modelContext: context, routes: dataSyncService.routes)
             }
         }
-        
+
         guard dataSyncService.isStaticDataReady else {
             staticDataLoadFailed = true
             isLoading = false
@@ -378,18 +384,18 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal.decrease.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(hasActiveFilters ? Color("PrimaryAccent") : .secondary)
-                
+
                 Text(routeCountText)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(Color("Background").opacity(0.9))
+                    .fill(Color("Background"))
                     .overlay(
                         Capsule()
                             .stroke(hasActiveFilters ? Color("PrimaryAccent").opacity(0.3) : Color.clear, lineWidth: 1.5)
@@ -398,8 +404,9 @@ struct ContentView: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("Filter routes, \(routeCountText) selected")
     }
-    
+
     /// Alerts button for accessing alerts modal - same size as filter button
     /// Uses theme colors for consistent appearance in light/dark mode
     private var alertsButton: some View {
@@ -408,22 +415,23 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: alertsService.activeAlertCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(alertsService.activeAlertCount > 0 ? Color("AlertRed") : Color.green)
-                
+
                 Text("\(alertsService.activeAlertCount)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(Color("Background").opacity(0.9))
+                    .fill(Color("Background"))
                     .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("Service alerts, \(alertsService.activeAlertCount) active")
     }
     
     /// Offline mode indicator
@@ -495,36 +503,30 @@ struct ContentView: View {
     }
     
     // MARK: - Helper Methods
-    
+
     /// Location permission is requested in onboarding or from Settings. The map
-    /// only starts the one-shot lookup after the user has opted in.
+    /// only starts location/heading updates after the user has opted in.
     private func startLocationIfAuthorized() {
         if locationManager.isAuthorized {
             locationManager.startUpdatingLocation()
         }
     }
-    
-    /// React to the observable location value instead of polling it.
+
+    /// React to the observable location value instead of polling it. Only moves
+    /// the camera once; location updates themselves keep running afterward so
+    /// the blue dot and its heading cone stay live as the user moves.
     private func positionMapAtCurrentLocationIfNeeded() {
         guard !hasInitiallyPositioned, let location = locationManager.userLocation else { return }
         let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
         cameraPosition = .region(MKCoordinateRegion(center: location, span: span))
         hasInitiallyPositioned = true
-        locationManager.stopUpdatingLocation()
     }
-    
-    /// Navigate to a specific stop on the map with smooth animation
+
+    /// Present stop information through one source of truth. Using item-based
+    /// sheet state avoids a separate Boolean/selection transaction and does not
+    /// couple first presentation to an expensive MapKit camera render.
     private func navigateToStop(_ stop: Stop) {
-        // Animate camera to stop location with a zoom level appropriate for viewing the stop
-        let span = MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
-        let region = MKCoordinateRegion(center: stop.coordinate, span: span)
-        
-        withAnimation(.easeInOut(duration: 0.6)) {
-            cameraPosition = .region(region)
-        }
-        
         selectedStop = stop
-        showingStopDetails = true
     }
     
     /// Check for pending navigation and execute it if conditions are met
@@ -545,18 +547,10 @@ struct ContentView: View {
         navigateToStop(pendingStop)
     }
     
-    /// Navigate to a specific bus on the map with smooth animation
+    /// Present bus information without making sheet construction wait for a
+    /// first-use MapKit zoom/render pass.
     private func navigateToBus(_ bus: EnrichedVehicle) {
-        // Animate camera to bus location with a zoom level appropriate for viewing the bus
-        let span = MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-        let region = MKCoordinateRegion(center: bus.coordinate, span: span)
-        
-        withAnimation(.easeInOut(duration: 0.6)) {
-            cameraPosition = .region(region)
-        }
-        
         selectedBus = bus
-        showingBusInfo = true
     }
     
 }
@@ -569,6 +563,7 @@ struct StopDetailsSheetLoader: View {
     let stop: Stop
     @State private var arrivals: [Arrival] = []
     @State private var servingRoutes: [Route] = []
+    @State private var schedule: [StopScheduleRoute] = []
     @State private var hasLoaded = false
     
     var body: some View {
@@ -577,7 +572,13 @@ struct StopDetailsSheetLoader: View {
                 StopLoadingView(stopName: stop.name)
                     .transition(.opacity)
             } else {
-                StopDetailsSheet(stop: stop, arrivals: arrivals, servingRoutes: servingRoutes)
+                StopDetailsSheet(
+                    stop: stop,
+                    arrivals: arrivals,
+                    servingRoutes: servingRoutes,
+                    schedule: schedule,
+                    hasRealtimeFeed: isRealtimeFeedFresh
+                )
                     .transition(.opacity)
             }
         }
@@ -588,10 +589,18 @@ struct StopDetailsSheetLoader: View {
             if servingRoutes.isEmpty {
                 servingRoutes = viewModel.dataSyncService.stopTimesService.getRoutesForStop(stop.id)
             }
+            if schedule.isEmpty {
+                schedule = viewModel.dataSyncService.stopTimesService.getTodaySchedule(for: stop.id)
+            }
             withAnimation(.easeInOut(duration: 0.25)) {
                 hasLoaded = true
             }
         }
+    }
+
+    private var isRealtimeFeedFresh: Bool {
+        guard let generation = viewModel.dataSyncService.tripUpdatesGeneration else { return false }
+        return Date().timeIntervalSince(generation) < 180
     }
 }
 
@@ -621,7 +630,7 @@ struct BusInfoSheetLoader: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 48))
                         .foregroundStyle(.secondary)
-                    
+
                     Text("Unable to load bus information")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.secondary)

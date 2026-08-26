@@ -20,6 +20,27 @@ class MapViewModel {
 
     private var busInfoCache: [String: (info: BusInfo, vehicleUpdate: Date, tripUpdate: Date?, cachedAt: Date)] = [:]
     private let busInfoCacheDuration: TimeInterval = 10
+
+    /// Memoized `Color(hex:)` results by route ID. `Color(hex:)` allocates a
+    /// `CharacterSet`/`Scanner` per call; parsing it for every stop on every
+    /// `rebuildMapSnapshot()` (~every 15s) is unnecessary since a route's
+    /// color never changes after static data loads.
+    private var routeColorCache: [String: Color] = [:]
+
+    /// Resolve and cache a route's display color.
+    private func color(for route: Route) -> Color {
+        if let cached = routeColorCache[route.route_id] {
+            return cached
+        }
+        let color: Color
+        if let hex = route.route_color, !hex.isEmpty {
+            color = Color(hex: hex)
+        } else {
+            color = .blue
+        }
+        routeColorCache[route.route_id] = color
+        return color
+    }
     
     // MARK: - Computed Properties from DataSyncService
     
@@ -44,17 +65,13 @@ class MapViewModel {
                 let servingRoutes = dataSyncService.stopTimesService.getRoutesForStop(stop.id)
                 let filteredServingRoutes = servingRoutes.filter { enabledRouteIds.contains($0.route_id) }
                 
-                guard let primaryRoute = filteredServingRoutes.first else { return nil }
-                
-                // Determine route color
-                let routeColor: Color
-                if let hex = primaryRoute.route_color, !hex.isEmpty {
-                    routeColor = Color(hex: hex)
-                } else {
-                    routeColor = .blue
-                }
-                
-                return StopWithColor(stop: stop, routeColor: routeColor)
+                guard !filteredServingRoutes.isEmpty else { return nil }
+
+                return StopWithColor(
+                    stop: stop,
+                    routeColors: filteredServingRoutes.map { color(for: $0) },
+                    routeShortNames: filteredServingRoutes.map(\.route_short_name)
+                )
             }
 
         let allVehicles = dataSyncService.enrichedVehicles()
@@ -220,10 +237,11 @@ class MapViewModel {
     
 }
 
-/// Stop with route color information
+/// Stop with all selected serving-route colors for segmented map markers.
 struct StopWithColor: Identifiable {
     let stop: Stop
-    let routeColor: Color
+    let routeColors: [Color]
+    let routeShortNames: [String]
     
     var id: Int { stop.id }
     var name: String { stop.name }

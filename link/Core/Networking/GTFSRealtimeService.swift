@@ -112,6 +112,7 @@ actor GTFSRealtimeService {
                     // Get route and trip information from trip descriptor
                     var routeId = ""
                     var tripId = ""
+                    var serviceDateKey: String?
                     
                     if vehiclePos.hasTrip {
                         let trip = vehiclePos.trip
@@ -125,12 +126,33 @@ actor GTFSRealtimeService {
                         if trip.hasTripID && !trip.tripID.isEmpty {
                             tripId = trip.tripID
                         }
+
+                        if trip.hasStartDate && !trip.startDate.isEmpty {
+                            serviceDateKey = trip.startDate
+                        }
                     }
                     
                     // Get vehicle ID
                     let vehicleId = vehiclePos.hasVehicle && vehiclePos.vehicle.hasID
                         ? vehiclePos.vehicle.id
                         : entity.id
+                    let vehicleLabel = vehiclePos.hasVehicle && vehiclePos.vehicle.hasLabel
+                        ? vehiclePos.vehicle.label
+                        : nil
+                    let currentStopId = vehiclePos.hasStopID ? Int(vehiclePos.stopID) : nil
+                    let currentStatus: VehicleProgressStatus = {
+                        guard vehiclePos.hasCurrentStatus else { return .unknown }
+                        switch vehiclePos.currentStatus {
+                        case .incomingAt: return .incomingAt
+                        case .stoppedAt: return .stoppedAt
+                        case .inTransitTo: return .inTransitTo
+                        }
+                    }()
+                    let updatedAt = vehiclePos.hasTimestamp
+                        ? Date(timeIntervalSince1970: TimeInterval(vehiclePos.timestamp))
+                        : (feedMessage.header.hasTimestamp
+                            ? Date(timeIntervalSince1970: TimeInterval(feedMessage.header.timestamp))
+                            : Date())
                     
                     return Vehicle(
                         id: vehicleId,
@@ -141,7 +163,14 @@ actor GTFSRealtimeService {
                         longitude: Double(position.longitude),
                         heading: position.hasBearing ? Double(position.bearing) : nil,
                         speed: position.hasSpeed ? Double(position.speed) : nil,
-                        lastUpdated: Date() // Set current timestamp when vehicle is parsed
+                        vehicleLabel: vehicleLabel,
+                        currentStopSequence: vehiclePos.hasCurrentStopSequence
+                            ? Int(vehiclePos.currentStopSequence)
+                            : nil,
+                        currentStopId: currentStopId,
+                        currentStatus: currentStatus,
+                        serviceDateKey: serviceDateKey,
+                        lastUpdated: updatedAt
                     )
                 }
                 
@@ -165,7 +194,7 @@ actor GTFSRealtimeService {
                 }
                 
                 // Wait before retrying (exponential backoff)
-                let delay = APIConfig.retryDelay * Double(attempt + 1)
+                let delay = APIConfig.retryDelay * pow(2, Double(attempt))
                 print("⚠️ Vehicle positions fetch failed (attempt \(attempt + 1)/\(APIConfig.maxRetries)): \(error.localizedDescription). Retrying in \(delay)s...")
                 try? await Task.sleep(for: .seconds(delay))
                 
@@ -183,7 +212,7 @@ actor GTFSRealtimeService {
                 }
                 
                 // Wait before retrying
-                let delay = APIConfig.retryDelay * Double(attempt + 1)
+                let delay = APIConfig.retryDelay * pow(2, Double(attempt))
                 print("⚠️ Vehicle positions fetch failed (attempt \(attempt + 1)/\(APIConfig.maxRetries)): \(error.localizedDescription). Retrying in \(delay)s...")
                 try? await Task.sleep(for: .seconds(delay))
             }

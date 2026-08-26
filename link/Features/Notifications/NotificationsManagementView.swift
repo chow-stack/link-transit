@@ -70,7 +70,7 @@ struct NotificationsManagementView: View {
                         ProgressView()
                             .scaleEffect(1.5)
                         Text("Loading stop details...")
-                            .font(.system(size: 16))
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,9 +110,10 @@ struct NotificationsManagementView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "gearshape.fill")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color("PrimaryAccent"))
                 Text("Alert Settings")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.headline.weight(.bold))
             }
 
             VStack(spacing: 0) {
@@ -154,9 +155,9 @@ struct NotificationsManagementView: View {
                         HStack(spacing: 4) {
                             Text("\(notificationService.defaultAdvanceMinutes) min")
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.caption2.weight(.semibold))
                         }
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color("PrimaryAccent"))
                     }
                 }
@@ -164,10 +165,7 @@ struct NotificationsManagementView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color("Background").opacity(0.8))
-        )
+        .appSheetCard(cornerRadius: 16)
     }
 
     private func settingsRow<Trailing: View>(
@@ -178,15 +176,15 @@ struct NotificationsManagementView: View {
     ) -> some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color("PrimaryAccent"))
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -195,64 +193,42 @@ struct NotificationsManagementView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 13)
-        .background(Color("Background").opacity(0.65))
+        .background(Color.secondary.opacity(0.06))
     }
-    
+
     private var emptyState: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 16) {
-                Image(systemName: "bell.slash")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.secondary)
-                
-                VStack(spacing: 8) {
-                    Text("No Notifications Set")
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(.primary)
-                    
-                    Text("Tap the bell icon on any stop to set up arrival notifications")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, min(32, UIScreen.main.bounds.width * 0.08))
-                }
-            }
-            
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 54)
-        .padding(.horizontal, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color("Background").opacity(0.8))
+        ContentUnavailableView(
+            "No Notifications Set",
+            systemImage: "bell.slash",
+            description: Text("Tap the bell icon on any stop to set up arrival notifications.")
         )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .appSheetCard(cornerRadius: 16)
     }
-    
+
     private var activeNotificationsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-            Image(systemName: "bell.badge.fill")
-                .font(.system(size: 16))
-                .foregroundStyle(Color("PrimaryAccent"))
-                
+                Image(systemName: "bell.badge.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color("PrimaryAccent"))
+
                 Text("Active Notifications")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
-                
+
                 Spacer()
-                
+
                 Text("\(notificationService.getNotificationPreferences().count)")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(Color("Background").opacity(0.6))
-                    )
+                    .background(Capsule().fill(Color.secondary.opacity(0.12)))
             }
-            
-            VStack(spacing: 12) {
+
+            VStack(spacing: 10) {
                 ForEach(notificationService.getNotificationPreferences()) { preference in
                     NotificationPreferenceRow(
                         preference: preference,
@@ -273,16 +249,13 @@ struct NotificationsManagementView: View {
                         } label: {
                             Label("Delete", systemImage: "trash.fill")
                         }
-                        .tint(.red)
+                        .tint(Color("AlertRed"))
                     }
                 }
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background").opacity(0.8))
-        )
+        .appSheetCard(cornerRadius: 16)
     }
 
     private var permissionStatusText: String {
@@ -336,17 +309,14 @@ struct NotificationPreferenceRow: View {
     @State private var showingStopDetails = false
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             // Icon
             Image(systemName: "mappin.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.green)
-                .frame(width: 32, height: 32)
-                .background(
-                    Circle()
-                        .fill(Color.green.opacity(0.15))
-                )
-            
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color("PrimaryAccent"))
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(Color("PrimaryAccent").opacity(0.15)))
+
             // Content - button to navigate to stop on map
             Button {
                 // Navigate to stop on the map
@@ -356,69 +326,60 @@ struct NotificationPreferenceRow: View {
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(preference.stopName)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
-                
-                // Route badges with colors
-                if !preference.enabledRouteIds.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(Array(preference.enabledRouteIds), id: \.self) { routeId in
-                                if let route = dataSyncService.routes.first(where: { $0.route_id == routeId }) {
-                                    Text(route.route_short_name)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(
-                                            Capsule()
-                                                .fill(route.route_color != nil ? Color(hex: route.route_color!) : Color("PrimaryAccent"))
-                                        )
+
+                    // Route badges with colors
+                    if !preference.enabledRouteIds.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(Array(preference.enabledRouteIds), id: \.self) { routeId in
+                                    if let route = dataSyncService.routes.first(where: { $0.route_id == routeId }) {
+                                        RouteIdentityBadge(shortName: route.route_short_name, colorHex: route.route_color, compact: true)
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                
-                Text("\(preference.advanceMinutes) min before arrival")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+
+                    Text("\(preference.advanceMinutes) min before arrival")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             Spacer()
-            
+
             // Edit and delete buttons
-            HStack(spacing: 8) {
+            HStack(spacing: 14) {
                 // Edit button (pencil icon)
                 Button {
                     onEdit()
                 } label: {
                     Image(systemName: "pencil")
-                        .font(.system(size: 16))
+                        .font(.subheadline)
                         .foregroundStyle(Color("PrimaryAccent"))
                 }
                 .buttonStyle(.plain)
-                
+                .accessibilityLabel("Edit notification for \(preference.stopName)")
+
                 // Delete button
                 Button {
                     showingDeleteAlert = true
                 } label: {
                     Image(systemName: "trash.fill")
-                        .font(.system(size: 16))
+                        .font(.subheadline)
                         .foregroundStyle(Color("AlertRed"))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Delete notification for \(preference.stopName)")
             }
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color("Background").opacity(0.6))
-        )
+        .appSheetCard(cornerRadius: 12)
         .alert("Delete Notification", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {

@@ -80,52 +80,56 @@ struct AlertsBannerView: View {
         HStack(spacing: 12) {
             // Icon
             Image(systemName: iconName)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(iconColor)
-            
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(iconColor.opacity(0.15)))
+
             // Text content - tappable
             Button {
                 onTap()
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(titleText)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    
+
                     if let subtitle = subtitleText {
                         Text(subtitle)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
             }
             .buttonStyle(PlainButtonStyle())
-            
+
             Spacer()
-            
+
             // Dismiss button
             Button {
                 // Trigger haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
-                
+
                 cancelAutoDismiss()
                 dismissBanner()
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
+                    .font(.body)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color("Background").opacity(0.95))
-                .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
-        )
+        .background(Color("Background"), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color("PrimaryAccent").opacity(0.10), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
         .offset(y: dragOffset)
         .gesture(
             DragGesture(minimumDistance: 10)

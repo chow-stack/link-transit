@@ -67,11 +67,10 @@ struct StopNotificationConfigSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.secondary)
-                    }
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Close notification settings")
                 }
             }
         }
@@ -95,85 +94,85 @@ struct StopNotificationConfigSheet: View {
     // MARK: - UI Components
     
     private var stopHeader: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Image(systemName: "bell.fill")
-                .font(.system(size: 48))
+                .font(.largeTitle)
                 .foregroundStyle(Color("PrimaryAccent"))
-            
+
             Text(stop.name)
-                .font(.system(size: 22, weight: .bold))
+                .font(.title3.weight(.bold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-            
+
             Text("Get notified before your bus arrives")
-                .font(.system(size: 16))
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
     }
-    
+
     private var permissionBanner: some View {
         HStack(spacing: 12) {
             Image(systemName: notificationService.authorizationStatus == .notDetermined ? "bell.badge.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 20))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(notificationService.authorizationStatus == .notDetermined ? Color("PrimaryAccent") : .orange)
-            
+
             VStack(alignment: .leading, spacing: 4) {
-                Text(notificationService.authorizationStatus == .notDetermined ? "Ready When You Are" : "Permission Required")
-                    .font(.system(size: 16, weight: .semibold))
+                Text(notificationService.authorizationStatus == .notDetermined ? "Ready when you are" : "Permission required")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                
+
                 Text(notificationService.authorizationStatus == .notDetermined
                      ? "Link will ask for permission when you save this alert."
                      : "Enable notifications in Settings to receive alerts.")
-                    .font(.system(size: 14))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             if notificationService.authorizationStatus == .denied {
                 Button("Settings") {
                     openAppSettings()
                 }
-                .font(.system(size: 14, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(Color("PrimaryAccent"))
             }
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(notificationService.authorizationStatus == .notDetermined
                       ? Color("PrimaryAccent").opacity(0.08)
                       : Color.orange.opacity(0.1))
         )
     }
-    
+
     private var liveArrivalsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "clock.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.green)
-                
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color("PrimaryAccent"))
+
                 Text("Live Arrivals")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
             }
-            
+
             if isLoadingArrivals {
                 HStack(spacing: 12) {
                     ProgressView()
                         .scaleEffect(0.8)
-                    Text("Loading arrivals...")
-                        .font(.system(size: 14))
+                    Text("Loading arrivals…")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 16)
             } else if arrivals.isEmpty {
                 Text("No active buses")
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 16)
@@ -186,40 +185,36 @@ struct StopNotificationConfigSheet: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemGray6).opacity(0.3))
-        )
+        .appSheetCard(cornerRadius: 16)
     }
-    
+
     private var routeSelectionSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "bus.fill")
-                    .font(.system(size: 16))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color("PrimaryAccent"))
-                
+
                 Text("Select Routes")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
             }
-            
+
             if servingRoutes.isEmpty {
                 Text("No routes available for this stop")
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(servingRoutes.enumerated()), id: \.element.id) { index, route in
+                VStack(spacing: 10) {
+                    ForEach(servingRoutes) { route in
                         RouteSelectionRow(
                             route: route,
                             isSelected: selectedRoutes.contains(route.route_id),
-                            isFirst: index == 0,
-                            isLast: index == servingRoutes.count - 1,
                             onToggle: {
-                                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                                     if selectedRoutes.contains(route.route_id) {
                                         selectedRoutes.remove(route.route_id)
                                     } else {
@@ -230,37 +225,37 @@ struct StopNotificationConfigSheet: View {
                         )
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
     }
-    
+
     private var timingSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Image(systemName: "timer.fill")
-                    .font(.system(size: 16))
+                Image(systemName: "timer")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color("PrimaryAccent"))
-                
+
                 Text("Notification Timing")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
             }
-            
+
             VStack(spacing: 20) {
                 // Large display of selected time
                 VStack(spacing: 4) {
                     Text("\(advanceMinutes)")
                         .font(.system(size: 56, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    
+                        .foregroundStyle(Color("PrimaryAccent"))
+                        .monospacedDigit()
+
                     Text(advanceMinutes == 1 ? "minute before" : "minutes before")
-                        .font(.system(size: 15))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                
+
                 // Discrete slider with snap-to steps
                 VStack(spacing: 8) {
                     Slider(
@@ -276,18 +271,18 @@ struct StopNotificationConfigSheet: View {
                         in: 0...Double(timingOptions.count - 1),
                         step: 1
                     )
-                    .tint(.blue)
-                    
+                    .tint(Color("PrimaryAccent"))
+
                     // Labels showing min and max
                     HStack {
                         Text("1m")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                        
+
                         Spacer()
-                        
+
                         Text("30m")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -295,12 +290,9 @@ struct StopNotificationConfigSheet: View {
             }
         }
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemGray6).opacity(0.3))
-        )
+        .appSheetCard(cornerRadius: 16)
     }
-    
+
     private var saveButton: some View {
         Button {
             Task {
@@ -313,49 +305,39 @@ struct StopNotificationConfigSheet: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
                 }
                 Text(isSaving ? "Saving…" : "Save Arrival Alert")
-                    .font(.system(size: 16, weight: .semibold))
             }
-            .foregroundStyle(.white)
+            .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(canSave ? Color("PrimaryAccent") : Color.gray.opacity(0.3))
-            )
         }
+        .buttonStyle(.borderedProminent)
+        .tint(Color("PrimaryAccent"))
+        .controlSize(.large)
         .disabled(!canSave)
-        .buttonStyle(.plain)
     }
-    
+
     private var deleteButton: some View {
         Button {
             Task {
                 // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .medium)
                 generator.impactOccurred()
-                
+
                 await notificationService.removeNotificationPreference(for: stop.id)
                 dismiss()
             }
         } label: {
             HStack {
                 Image(systemName: "trash.fill")
-                    .font(.system(size: 16, weight: .semibold))
                 Text("Delete Notification")
-                    .font(.system(size: 16, weight: .semibold))
             }
-            .foregroundStyle(Color("AlertRed"))
+            .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color("AlertRed").opacity(0.1))
-            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .tint(Color("AlertRed"))
+        .controlSize(.large)
     }
     
     // MARK: - Helper Methods
@@ -421,71 +403,47 @@ struct ArrivalRow: View {
     let arrival: Arrival
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Route color circle
-            Circle()
-                .fill(arrival.routeColor != nil ? Color(hex: arrival.routeColor!) : Color("PrimaryAccent"))
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Text(arrival.routeShortName)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 12) {
+                RouteIdentityBadge(
+                    shortName: arrival.routeShortName,
+                    colorHex: arrival.routeColor,
+                    compact: true
                 )
             
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Route \(arrival.routeShortName)")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.primary)
-                
-                Text(arrival.isRealtime ? "Live" : "Scheduled")
-                    .font(.system(size: 12))
-                    .foregroundStyle(arrival.isRealtime ? .green : .secondary)
-            }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(arrival.destinationDisplayName)
+                        .font(.subheadline.weight(.medium))
+
+                    if let vehicleId = arrival.vehicleId {
+                        Text("Bus \(vehicleId)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             
-            Spacer()
+                Spacer()
             
-            // ETA
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(arrival.formattedTime)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(timeColor)
-                
-                if let badge = arrival.statusBadge {
-                    Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(badgeColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(badgeColor.opacity(0.15))
-                        )
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(arrival.arrivalTime, format: .dateTime.hour().minute())
+                        .font(.subheadline.weight(.bold))
+                        .monospacedDigit()
+                    Text(relativeETA(now: context.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.systemBackground).opacity(0.5))
-        )
-    }
-    
-    private var timeColor: Color {
-        if arrival.isArriving {
-            return .green
-        } else {
-            return .primary
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .appSheetCard(cornerRadius: 10)
+            .accessibilityElement(children: .combine)
         }
     }
-    
-    private var badgeColor: Color {
-        switch arrival.statusColor {
-        case "green": return .green
-        case "blue": return .blue
-        case "gray": return .secondary
-        default: return .secondary
-        }
+
+    private func relativeETA(now: Date) -> String {
+        let seconds = arrival.arrivalTime.timeIntervalSince(now)
+        if seconds < 60 { return "<1 min" }
+        return "\(max(1, Int(ceil(seconds / 60)))) min"
     }
 }
 
@@ -493,84 +451,49 @@ struct ArrivalRow: View {
 struct RouteSelectionRow: View {
     let route: Route
     let isSelected: Bool
-    let isFirst: Bool
-    let isLast: Bool
     let onToggle: () -> Void
-    
+
     var body: some View {
         Button { onToggle() } label: {
             HStack(spacing: 14) {
-                // Route color circle
-                Circle()
-                    .fill(routeColor)
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Text(route.route_short_name)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                    )
-                
+                RouteIdentityBadge(shortName: route.route_short_name, colorHex: route.route_color)
+
                 // Route information
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Route \(route.route_short_name)")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    
+
                     Text(route.route_long_name)
-                        .font(.system(size: 14))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                
+
                 Spacer()
-                
+
                 // Checkmark
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Color("PrimaryAccent"))
-                } else {
-                    Image(systemName: "circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                }
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isSelected ? Color("PrimaryAccent") : .secondary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(backgroundShape)
-        .overlay(
-            // Divider (hide for last item)
-            Group {
-                if !isLast {
-                    Rectangle()
-                        .fill(Color(.separator))
-                        .frame(height: 0.5)
-                        .offset(y: 24)
-                }
+        .appSheetCard(cornerRadius: 12)
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(routeColor.opacity(0.4), lineWidth: 1.5)
             }
-        )
-    }
-    
-    @ViewBuilder
-    private var backgroundShape: some View {
-        if isFirst && isLast {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color("Background").opacity(0.8))
-        } else if isFirst {
-            UnevenRoundedRectangle(cornerRadii: .init(topLeading: 12, bottomLeading: 0, bottomTrailing: 0, topTrailing: 12))
-                .fill(Color("Background").opacity(0.8))
-        } else if isLast {
-            UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 12, bottomTrailing: 12, topTrailing: 0))
-                .fill(Color("Background").opacity(0.8))
-        } else {
-            Rectangle()
-                .fill(Color("Background").opacity(0.8))
         }
+        .accessibilityLabel("Route \(route.route_short_name), \(route.route_long_name)")
+        .accessibilityHint(isSelected ? "Double tap to stop notifying for this route" : "Double tap to notify for this route")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
-    
+
     private var routeColor: Color {
         if let hex = route.route_color, !hex.isEmpty {
             return Color(hex: hex)

@@ -10,6 +10,7 @@ struct LinkApp: App {
     @State private var notificationService: NotificationService
     @State private var alertsService = AlertsService()
     @State private var themePreference = ThemePreference()
+    @State private var mapAppPreference = MapAppPreference()
     @State private var networkMonitor = NetworkMonitor.shared
     @State private var onboardingStore = OnboardingStore()
     
@@ -39,6 +40,7 @@ struct LinkApp: App {
                 .environment(notificationService)
                 .environment(alertsService)
                 .environment(themePreference)
+                .environment(mapAppPreference)
                 .environment(networkMonitor)
                 .environment(onboardingStore)
                 .modelContainer(modelContainer)

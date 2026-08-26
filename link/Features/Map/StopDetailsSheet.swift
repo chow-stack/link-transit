@@ -1,408 +1,449 @@
 import SwiftUI
 
-/// Bottom sheet displaying stop details and upcoming arrivals
 struct StopDetailsSheet: View {
     let stop: Stop
     let arrivals: [Arrival]
-    let servingRoutes: [Route]  // All routes serving this stop
+    let servingRoutes: [Route]
+    let schedule: [StopScheduleRoute]
+    let hasRealtimeFeed: Bool
+
     @Environment(\.dismiss) private var dismiss
     @Environment(FavoriteStore.self) private var favoriteStore
     @Environment(NotificationService.self) private var notificationService
+    @Environment(MapAppPreference.self) private var mapAppPreference
     @State private var showingNotificationConfig = false
-    
-    // Group arrivals by route
-    private var arrivalsByRoute: [(route: String, color: String?, arrivals: [Arrival])] {
-        let grouped = Dictionary(grouping: arrivals) { $0.routeShortName }
-        return grouped.map { (route: $0.key, color: $0.value.first?.routeColor, arrivals: $0.value.sorted { $0.arrivalTime < $1.arrivalTime }) }
-            .sorted { $0.route < $1.route }
+    @State private var choosingMapApp = false
+
+    init(
+        stop: Stop,
+        arrivals: [Arrival],
+        servingRoutes: [Route],
+        schedule: [StopScheduleRoute] = [],
+        hasRealtimeFeed: Bool = false
+    ) {
+        self.stop = stop
+        self.arrivals = arrivals.sorted { $0.arrivalTime < $1.arrivalTime }
+        self.servingRoutes = servingRoutes
+        self.schedule = schedule
+        self.hasRealtimeFeed = hasRealtimeFeed
     }
-    
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Header
-                stopHeader
-                
-                Divider()
-                    .padding(.horizontal, 16)
-                
-                // Arrivals list
-                if arrivals.isEmpty {
-                    emptyState
-                } else {
-                    arrivalsList
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    stopHeader
+                    actionButtons
+                    arrivalsHeader
+
+                    if arrivals.isEmpty {
+                        emptyState
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(arrivals) { arrival in
+                                StopArrivalRow(arrival: arrival)
+                                if arrival.id != arrivals.last?.id {
+                                    Divider()
+                                        .overlay(Color("PrimaryAccent").opacity(0.08))
+                                        .padding(.leading, 52)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .appSheetCard()
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
+            .background(Color("Background"))
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 16) {
-                        // Favorite button
-                        Button { 
-                            // Haptic feedback
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            
-                            Task {
-                                await favoriteStore.toggleStopFavorite(stopId: stop.id, name: stop.name)
-                            }
-                        } label: {
-                            Image(systemName: favoriteStore.isStopFavorited(stop.id) ? "heart.fill" : "heart")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(favoriteStore.isStopFavorited(stop.id) ? Color("AlertRed") : .secondary)
-                                .scaleEffect(favoriteStore.isStopFavorited(stop.id) ? 1.1 : 1.0)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: favoriteStore.isStopFavorited(stop.id))
-                        }
-                        
-                        // Notification button
-                        Button { 
+                        favoriteButton
+                        Button {
                             showingNotificationConfig = true
                         } label: {
                             Image(systemName: notificationService.hasNotification(for: stop.id) ? "bell.fill" : "bell")
-                                .font(.system(size: 20, weight: .semibold))
                                 .foregroundStyle(notificationService.hasNotification(for: stop.id) ? Color("PrimaryAccent") : .secondary)
                         }
+                        .accessibilityLabel(notificationService.hasNotification(for: stop.id) ? "Edit arrival alert" : "Create arrival alert")
                     }
                 }
-                
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.secondary)
-                    }
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("Close stop details")
                 }
+            }
+            .navigationDestination(for: StopScheduleDestinationLink.self) { _ in
+                TodayStopScheduleView(stopName: stop.name, routes: schedule)
             }
             .sheet(isPresented: $showingNotificationConfig) {
                 StopNotificationConfigSheet(stop: stop, servingRoutes: servingRoutes)
             }
+            .confirmationDialog("Choose a map app", isPresented: $choosingMapApp, titleVisibility: .visible) {
+                Button("Apple Maps") { openDirections(in: .appleMaps) }
+                Button("Google Maps") { openDirections(in: .googleMaps) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your choice becomes the preferred app. You can change it in Settings.")
+            }
         }
-        .background(Color("Background"))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
-    
-    // MARK: - UI Components
-    
+
     private var stopHeader: some View {
-        VStack(spacing: 16) {
-            // Stop name only (no stop ID)
+        VStack(alignment: .leading, spacing: 12) {
             Text(stop.name)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .minimumScaleFactor(0.8)
-                .padding(.top, 8)
-            
-            // Horizontal scrolling routes
+                .font(.title3.weight(.bold))
+                .fixedSize(horizontal: false, vertical: true)
+
             if !servingRoutes.isEmpty {
-                HStack(spacing: 12) {
-                    Text("Routes:")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(servingRoutes, id: \.id) { route in
-                                RouteBadge(route: route)
-                            }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(servingRoutes) { route in
+                            RouteIdentityBadge(shortName: route.route_short_name, colorHex: route.route_color, compact: true)
                         }
                     }
                 }
-                .padding(.horizontal, 20)
             }
         }
-        .padding(.vertical, 12)
     }
-    
-    private var arrivalsList: some View {
-        ScrollView {
-            LazyVStack(spacing: 20) {
-                ForEach(arrivalsByRoute, id: \.route) { routeGroup in
-                    RouteGroupSection(
-                        routeName: routeGroup.route,
-                        routeColor: routeGroup.color,
-                        arrivals: routeGroup.arrivals
-                    )
+
+    private var actionButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                if mapAppPreference.selectedApp == .ask {
+                    choosingMapApp = true
+                } else {
+                    TransitDirectionsService.open(stop: stop, in: mapAppPreference.selectedApp)
                 }
+            } label: {
+                Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 20)
-        }
-    }
-    
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            
-            Image(systemName: "clock.badge.questionmark")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
-            
-            VStack(spacing: 6) {
-                Text("No Active Buses")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
-                
-                Text("No buses are currently active at this stop")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            Spacer()
-            Spacer()
-        }
-        .padding(.horizontal, min(40, UIScreen.main.bounds.width * 0.1))
-    }
-}
+            .buttonStyle(.borderedProminent)
+            .tint(Color("PrimaryAccent"))
 
-// MARK: - Supporting Components
-
-/// Route group section showing all buses for a specific route
-struct RouteGroupSection: View {
-    let routeName: String
-    let routeColor: String?
-    let arrivals: [Arrival]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Route header
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(routeColor != nil ? Color(hex: routeColor!) : Color("PrimaryAccent"))
-                    .frame(width: 32, height: 32)
-                    .overlay(
-                        Text(routeName)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                    )
-                
-                Text("Route \(routeName)")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
-                
-                Spacer()
-                
-                Text("ETA")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            NavigationLink(value: StopScheduleDestinationLink()) {
+                Label("Full schedule", systemImage: "calendar")
+                    .frame(maxWidth: .infinity)
             }
-            
-            // Individual buses for this route
-            VStack(spacing: 8) {
-                ForEach(arrivals) { arrival in
-                    BusArrivalRow(arrival: arrival)
-                }
-            }
+            .buttonStyle(.bordered)
+            .tint(Color("PrimaryAccent"))
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color("Background").opacity(0.8))
-        )
+        .font(.subheadline.weight(.semibold))
+        .controlSize(.regular)
     }
-}
 
-/// Individual bus arrival row within a route group
-struct BusArrivalRow: View {
-    let arrival: Arrival
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            // Left side: Bus ID
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Bus \(arrival.busDisplayName)")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.primary)
-            }
-            
+    private var arrivalsHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Arrivals today")
+                .font(.subheadline.weight(.semibold))
             Spacer()
-            
-            // Right side: ETA and status
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(arrival.formattedTime)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundStyle(timeColor)
-                
-                if let badge = arrival.statusBadge {
-                    Text(badge)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(badgeTextColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(badgeBackgroundColor)
-                        )
-                }
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color("Background").opacity(0.6))
-        )
-    }
-    
-    private var timeColor: Color {
-        if arrival.isArriving {
-            return .green
-        } else {
-            return .primary
-        }
-    }
-    
-    private var badgeTextColor: Color {
-        switch arrival.statusColor {
-        case "green": return .green // Semantic color for success
-        case "blue": return Color("PrimaryAccent")
-        case "gray": return .secondary
-        default: return .secondary
-        }
-    }
-    
-    private var badgeBackgroundColor: Color {
-        switch arrival.statusColor {
-        case "green": return Color.green.opacity(0.15) // Semantic color for success
-        case "blue": return Color("PrimaryAccent").opacity(0.15)
-        case "gray": return Color("Background").opacity(0.5)
-        default: return Color("Background").opacity(0.5)
-        }
-    }
-}
-
-/// Route badge displayed in horizontal scrolling view
-struct RouteBadge: View {
-    let route: Route
-    
-    var body: some View {
-        Text(route.route_short_name)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(route.route_color != nil ? Color(hex: route.route_color!) : Color("PrimaryAccent"))
+            Label(
+                hasRealtimeFeed ? "Live + schedule" : "Published schedule",
+                systemImage: hasRealtimeFeed ? "dot.radiowaves.left.and.right" : "calendar"
             )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView(
+            "No more arrivals today",
+            systemImage: "moon.stars",
+            description: Text("Open the full schedule to see all published times for today's service.")
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task { await favoriteStore.toggleStopFavorite(stopId: stop.id, name: stop.name) }
+        } label: {
+            Image(systemName: favoriteStore.isStopFavorited(stop.id) ? "heart.fill" : "heart")
+                .foregroundStyle(favoriteStore.isStopFavorited(stop.id) ? Color("AlertRed") : .secondary)
+        }
+        .accessibilityLabel(favoriteStore.isStopFavorited(stop.id) ? "Remove stop from favorites" : "Add stop to favorites")
+    }
+
+    private func openDirections(in app: PreferredMapApp) {
+        mapAppPreference.selectedApp = app
+        TransitDirectionsService.open(stop: stop, in: app)
     }
 }
 
-/// Simple loader for stop details from favorites/notifications
+private struct StopScheduleDestinationLink: Hashable {}
+
+private struct StopArrivalRow: View {
+    let arrival: Arrival
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 10) {
+                RouteIdentityBadge(
+                    shortName: arrival.routeShortName,
+                    colorHex: arrival.routeColor,
+                    compact: true
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(arrival.destinationDisplayName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+
+                    if let vehicleId = arrival.vehicleId, !vehicleId.isEmpty {
+                        Text("Bus \(vehicleId)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(arrival.arrivalTime, format: .dateTime.hour().minute())
+                        .font(.body.weight(.bold))
+                        .monospacedDigit()
+                    Text(relativeETA(now: context.date))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 10)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText(now: context.date))
+        }
+    }
+
+    private func relativeETA(now: Date) -> String {
+        let seconds = arrival.arrivalTime.timeIntervalSince(now)
+        if seconds < 60 { return "<1 min" }
+        return "\(max(1, Int(ceil(seconds / 60)))) min"
+    }
+
+    private func accessibilityText(now: Date) -> String {
+        let bus = arrival.vehicleId.map { ", bus \($0)" } ?? ""
+        return "Route \(arrival.routeShortName) to \(arrival.destinationDisplayName)\(bus), arriving at \(arrival.arrivalTime.formatted(date: .omitted, time: .shortened)), \(relativeETA(now: now))"
+    }
+}
+
+private struct TodayStopScheduleView: View {
+    let stopName: String
+    let routes: [StopScheduleRoute]
+    @State private var selectedRouteId: String
+
+    init(stopName: String, routes: [StopScheduleRoute]) {
+        self.stopName = stopName
+        self.routes = routes
+        _selectedRouteId = State(initialValue: routes.first?.id ?? "")
+    }
+
+    private var selectedRoute: StopScheduleRoute? {
+        routes.first(where: { $0.id == selectedRouteId }) ?? routes.first
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            ScrollView {
+                if routes.isEmpty {
+                    ContentUnavailableView(
+                        "No service today",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text("There are no published trips at this stop for today's service calendar.")
+                    )
+                    .padding(.top, 48)
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(context.date, format: .dateTime.weekday(.wide).month(.wide).day())
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        routeSelector
+                        if let route = selectedRoute {
+                            ForEach(route.destinations) { destination in
+                                destinationSection(destination, route: route, now: context.date)
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .background(Color("Background"))
+        .navigationTitle("Today's schedule")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var routeSelector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if routes.count > 1 {
+                Text("Select a route")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(routes) { route in
+                        routeSelectorChip(for: route)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 8)
+            }
+            .padding(.horizontal, -4)
+        }
+    }
+
+    private func routeSelectorChip(for route: StopScheduleRoute) -> some View {
+        let isSelected = selectedRouteId == route.id
+        let tint = route.colorHex.map(Color.init(hex:)) ?? Color("PrimaryAccent")
+
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                selectedRouteId = route.id
+            }
+        } label: {
+            VStack(spacing: 6) {
+                RouteIdentityBadge(shortName: route.shortName, colorHex: route.colorHex, compact: true)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(isSelected ? tint : Color.secondary.opacity(0.25), lineWidth: isSelected ? 2 : 1)
+                    }
+                    .opacity(isSelected ? 1 : 0.5)
+                    .scaleEffect(isSelected ? 1.08 : 1.0)
+
+                Capsule()
+                    .fill(isSelected ? tint : Color.clear)
+                    .frame(width: 16, height: 3)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Route \(route.shortName)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(isSelected ? "" : "Double tap to show this route's schedule")
+    }
+
+    private func destinationSection(
+        _ destination: StopScheduleDestination,
+        route: StopScheduleRoute,
+        now: Date
+    ) -> some View {
+        let nextId = destination.times.first(where: { $0.date >= now })?.id
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("To \(destination.name)")
+                    .font(.headline)
+                Text("\(destination.times.count) published times")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 8)], spacing: 8) {
+                ForEach(destination.times) { time in
+                    ScheduleTimeCell(
+                        time: time,
+                        isNext: time.id == nextId,
+                        tint: route.colorHex.map(Color.init(hex:)) ?? Color("PrimaryAccent"),
+                        now: now
+                    )
+                }
+            }
+        }
+        .padding(14)
+        .appSheetCard()
+    }
+}
+
+private struct ScheduleTimeCell: View {
+    let time: StopScheduleTime
+    let isNext: Bool
+    let tint: Color
+    let now: Date
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(time.date, format: .dateTime.hour().minute())
+                .font(.subheadline.weight(isNext ? .bold : .medium))
+                .monospacedDigit()
+            if time.isNextCalendarDay {
+                Text("Next day")
+                    .font(.caption2)
+            }
+        }
+        .foregroundStyle(time.date < now ? .secondary : .primary)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(isNext ? tint.opacity(0.18) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            if isNext {
+                RoundedRectangle(cornerRadius: 10).stroke(tint, lineWidth: 1.5)
+            }
+        }
+        .accessibilityLabel("\(time.date.formatted(date: .omitted, time: .shortened))\(time.isNextCalendarDay ? ", next day" : "")\(isNext ? ", next departure" : "")")
+    }
+}
+
+/// Loader used by favorite/notification entry points outside the map.
 struct StopDetailsSheetLoaderSimple: View {
     let stop: Stop
     let servingRoutes: [Route]
     @Environment(DataSyncService.self) private var dataSyncService
     @State private var arrivals: [Arrival] = []
+    @State private var schedule: [StopScheduleRoute] = []
     @State private var hasLoaded = false
-    
+
     var body: some View {
         Group {
             if !hasLoaded {
                 StopLoadingView(stopName: stop.name)
-                    .transition(.opacity)
             } else {
-                StopDetailsSheet(stop: stop, arrivals: arrivals, servingRoutes: servingRoutes)
-                    .transition(.opacity)
+                StopDetailsSheet(
+                    stop: stop,
+                    arrivals: arrivals,
+                    servingRoutes: servingRoutes,
+                    schedule: schedule,
+                    hasRealtimeFeed: dataSyncService.tripUpdatesGeneration != nil
+                )
             }
         }
         .task(id: dataSyncService.tripUpdatesGeneration) {
             arrivals = await dataSyncService.stopTimesService.getUpcomingArrivals(for: stop.id, maxArrivals: 10)
-            withAnimation(.easeInOut(duration: 0.25)) {
-                hasLoaded = true
-            }
+            schedule = dataSyncService.stopTimesService.getTodaySchedule(for: stop.id)
+            withAnimation(.easeInOut(duration: 0.2)) { hasLoaded = true }
         }
     }
 }
 
 #Preview {
-    // Sample stop
-    let stop = Stop(
-        id: 45121,
-        name: "Kirkwood Ave & Maple St",
-        lat: 39.166595,
-        lon: -86.542137
-    )
-    
-    // Sample arrivals with real-time data
-    let arrivals = [
-        Arrival(
+    let stop = Stop(id: 45121, name: "Kirkwood Ave & Indiana Ave", lat: 39.166595, lon: -86.542137)
+    let route = Route(route_id: "6", route_short_name: "6", route_long_name: "Campus Loop", route_color: "EC0E0E")
+    let now = Date()
+    return StopDetailsSheet(
+        stop: stop,
+        arrivals: [Arrival(
             id: "1",
-            stopId: 45121,
+            stopId: stop.id,
             tripId: "trip1",
-            routeId: "1",
-            routeShortName: "6",
-            routeColor: "EC0E0E",
-            arrivalTime: Date().addingTimeInterval(45),
-            scheduledTime: "14:30:00",
+            routeId: route.id,
+            routeShortName: route.route_short_name,
+            routeColor: route.route_color,
+            tripHeadsign: "Downtown via Kirkwood",
+            arrivalTime: now.addingTimeInterval(420),
+            scheduledTime: "20:43:00",
             isRealtime: true,
-            vehicleId: "bus123",
-            busNumber: "123"
-        ),
-        Arrival(
-            id: "2",
-            stopId: 45121,
-            tripId: "trip2",
-            routeId: "1",
-            routeShortName: "6",
-            routeColor: "EC0E0E",
-            arrivalTime: Date().addingTimeInterval(900),
-            scheduledTime: "14:45:00",
-            isRealtime: false,
-            vehicleId: "bus456",
-            busNumber: "456"
-        ),
-        Arrival(
-            id: "3",
-            stopId: 45121,
-            tripId: "trip3",
-            routeId: "2",
-            routeShortName: "3E",
-            routeColor: "0066CC",
-            arrivalTime: Date().addingTimeInterval(420),
-            scheduledTime: "14:37:00",
-            isRealtime: true,
-            vehicleId: "bus789",
-            busNumber: "789"
-        ),
-        Arrival(
-            id: "4",
-            stopId: 45121,
-            tripId: "trip4",
-            routeId: "2",
-            routeShortName: "3E",
-            routeColor: "0066CC",
-            arrivalTime: Date().addingTimeInterval(1200),
-            scheduledTime: "14:50:00",
-            isRealtime: false,
-            vehicleId: "bus101",
-            busNumber: "101"
-        ),
-        Arrival(
-            id: "5",
-            stopId: 45121,
-            tripId: "trip5",
-            routeId: "3",
-            routeShortName: "9",
-            routeColor: "FF9900",
-            arrivalTime: Date().addingTimeInterval(30), // Arriving now
-            scheduledTime: "14:40:00",
-            isRealtime: true,
-            vehicleId: "bus202",
-            busNumber: "202"
-        )
-    ]
-    
-    // Sample serving routes
-    let servingRoutes = [
-        Route(route_id: "1", route_short_name: "6", route_long_name: "Campus Shuttle", route_color: "80471C"),
-        Route(route_id: "2", route_short_name: "3E", route_long_name: "3 East College Mall", route_color: "0066CC"),
-        Route(route_id: "3", route_short_name: "9", route_long_name: "IU Campus Express", route_color: "FF9900")
-    ]
-    
-    return StopDetailsSheet(stop: stop, arrivals: arrivals, servingRoutes: servingRoutes)
+            vehicleId: "2494"
+        )],
+        servingRoutes: [route],
+        hasRealtimeFeed: true
+    )
 }

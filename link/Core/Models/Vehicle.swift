@@ -1,6 +1,13 @@
 import Foundation
 import CoreLocation
 
+enum VehicleProgressStatus: String, Codable, Sendable {
+    case incomingAt
+    case stoppedAt
+    case inTransitTo
+    case unknown
+}
+
 /// Represents a bus vehicle with real-time position
 struct Vehicle: Identifiable, Codable, Equatable, Sendable {
     let id: String
@@ -11,7 +18,44 @@ struct Vehicle: Identifiable, Codable, Equatable, Sendable {
     let longitude: Double
     let heading: Double?
     let speed: Double?
+    let vehicleLabel: String?
+    let currentStopSequence: Int?
+    let currentStopId: Int?
+    let currentStatus: VehicleProgressStatus
+    let serviceDateKey: String?
     let lastUpdated: Date
+
+    init(
+        id: String,
+        routeId: String,
+        tripId: String,
+        routeName: String,
+        latitude: Double,
+        longitude: Double,
+        heading: Double?,
+        speed: Double?,
+        vehicleLabel: String? = nil,
+        currentStopSequence: Int? = nil,
+        currentStopId: Int? = nil,
+        currentStatus: VehicleProgressStatus = .unknown,
+        serviceDateKey: String? = nil,
+        lastUpdated: Date
+    ) {
+        self.id = id
+        self.routeId = routeId
+        self.tripId = tripId
+        self.routeName = routeName
+        self.latitude = latitude
+        self.longitude = longitude
+        self.heading = heading
+        self.speed = speed
+        self.vehicleLabel = vehicleLabel
+        self.currentStopSequence = currentStopSequence
+        self.currentStopId = currentStopId
+        self.currentStatus = currentStatus
+        self.serviceDateKey = serviceDateKey
+        self.lastUpdated = lastUpdated
+    }
     
     /// Computed property for MapKit coordinate
     var coordinate: CLLocationCoordinate2D {
@@ -23,7 +67,11 @@ struct Vehicle: Identifiable, Codable, Equatable, Sendable {
         return latitude != other.latitude ||
                longitude != other.longitude ||
                heading != other.heading ||
-               speed != other.speed
+               speed != other.speed ||
+               tripId != other.tripId ||
+               currentStopSequence != other.currentStopSequence ||
+               currentStopId != other.currentStopId ||
+               currentStatus != other.currentStatus
     }
     
     enum CodingKeys: String, CodingKey {
@@ -35,6 +83,11 @@ struct Vehicle: Identifiable, Codable, Equatable, Sendable {
         case longitude
         case heading
         case speed
+        case vehicleLabel = "vehicle_label"
+        case currentStopSequence = "current_stop_sequence"
+        case currentStopId = "current_stop_id"
+        case currentStatus = "current_status"
+        case serviceDateKey = "service_date"
         case lastUpdated = "last_updated"
     }
 }

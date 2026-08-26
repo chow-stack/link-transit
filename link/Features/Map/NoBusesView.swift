@@ -10,17 +10,17 @@ struct NoBusesView: View {
         ScrollView {
             VStack(spacing: 24) {
                 // Header
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     Image(systemName: "bus.fill")
-                        .font(.system(size: 48))
+                        .font(.largeTitle)
                         .foregroundStyle(.secondary)
-                    
+
                     Text("No Buses Active")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.title3.weight(.bold))
                         .foregroundStyle(.primary)
-                    
+
                     Text("Service Hours")
-                        .font(.system(size: 16))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 40)
@@ -74,18 +74,15 @@ struct RouteServiceHoursCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Route header
-            HStack(spacing: 8) {
-                Text("Route \(route.route_short_name)")
-                    .font(.system(size: 18, weight: .semibold))
+            HStack(spacing: 10) {
+                RouteIdentityBadge(shortName: route.route_short_name, colorHex: route.route_color, compact: true)
+
+                Text(route.route_long_name)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                
-                if let color = route.route_color, !color.isEmpty {
-                    Circle()
-                        .fill(Color(hex: color))
-                        .frame(width: 12, height: 12)
-                }
+                    .lineLimit(1)
             }
-            
+
             // Service hours grouped by day pattern
             VStack(alignment: .leading, spacing: 6) {
                 // Weekdays (Mon-Fri) if all have same hours
@@ -126,12 +123,9 @@ struct RouteServiceHoursCard: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-        )
+        .appSheetCard(cornerRadius: 12)
     }
-    
+
     /// Check if route has any service at all
     private var hasAnyService: Bool {
         serviceHours.monday != nil || serviceHours.tuesday != nil ||
@@ -168,20 +162,21 @@ struct ServiceHoursRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Text(days)
-                .font(.system(size: 14))
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(width: 90, alignment: .leading)
-            
+
             if let hours = hours {
                 Text("\(hours.formattedStart()) - \(hours.formattedEnd())")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.subheadline.weight(.medium))
+                    .monospacedDigit()
                     .foregroundStyle(.primary)
             } else {
                 Text("No service")
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
         }
     }

@@ -11,17 +11,17 @@ struct ServiceHoursSheet: View {
             ScrollView {
                 VStack(spacing: 24) {
                     // Header
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         Image(systemName: "clock.fill")
-                            .font(.system(size: 48))
+                            .font(.largeTitle)
                             .foregroundStyle(Color("PrimaryAccent"))
-                        
+
                         Text("Service Hours")
-                            .font(.system(size: 24, weight: .semibold))
+                            .font(.title3.weight(.bold))
                             .foregroundStyle(.primary)
-                        
+
                         Text("Regular operating hours for each route")
-                            .font(.system(size: 14))
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }

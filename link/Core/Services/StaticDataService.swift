@@ -6,6 +6,7 @@ struct StaticDataSnapshot: Sendable {
     let trips: [Trip]
     let stops: [Stop]
     let stopTimes: StopTimesData
+    let serviceCalendar: GTFSServiceCalendarData
     let routeServiceHours: [RouteServiceHours]
 }
 
@@ -47,6 +48,21 @@ final class StaticDataService {
             return [:]
         }
     }
+
+    private static func loadServiceCalendar(_ filename: String) -> GTFSServiceCalendarData {
+        guard let url = Bundle.main.url(forResource: filename, withExtension: "json") else {
+            print("❌ Missing \(filename).json in bundle.")
+            return .empty
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode(GTFSServiceCalendarData.self, from: data)
+        } catch {
+            print("❌ Failed to decode \(filename).json: \(error)")
+            return .empty
+        }
+    }
     
     /// Decode all bundled GTFS resources away from the main actor, then publish
     /// the completed value snapshot in one operation.
@@ -58,6 +74,7 @@ final class StaticDataService {
                 trips: Self.loadJSON("trips"),
                 stops: Self.loadJSON("stops_optimized"),
                 stopTimes: Self.loadStopTimesData("stop_times_optimized"),
+                serviceCalendar: Self.loadServiceCalendar("service_calendar"),
                 routeServiceHours: Self.loadJSON("route_service_hours")
             )
         }.value

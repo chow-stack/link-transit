@@ -65,61 +65,55 @@ struct RouteFilterView: View {
             // Stats with proper filtering
             HStack(spacing: 8) {
                 Image(systemName: "map.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color("PrimaryAccent"))
-                
+
                 Text(routeCountText)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                
+
                 Spacer()
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            
+
             // Action buttons section - modern, clean design
             VStack(spacing: 10) {
                 // Top row: Favorites toggle and Select All
                 HStack(spacing: 10) {
                     // Favorites-only toggle
-                    Button { 
+                    Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             favoriteStore.toggleFavoritesOnly()
                         }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: favoriteStore.showFavoritesOnly ? "heart.fill" : "heart")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                             Text(favoriteStore.showFavoritesOnly ? "All Routes" : "Favorites")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                         }
                         .foregroundStyle(favoriteStore.showFavoritesOnly ? .primary : Color("PrimaryAccent"))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(.ultraThinMaterial)
-                        )
+                        .appSheetCard(cornerRadius: 10)
                     }
                     .buttonStyle(.plain)
-                    
+
                     // Select/Deselect All button
-                    Button { 
+                    Button {
                         toggleAllFilteredRoutes()
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: allFilteredRoutesSelected ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                             Text(allFilteredRoutesSelected ? "Deselect All" : "Select All")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                         }
                         .foregroundStyle(allFilteredRoutesSelected ? .primary : Color("PrimaryAccent"))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(.ultraThinMaterial)
-                        )
+                        .appSheetCard(cornerRadius: 10)
                     }
                     .buttonStyle(.plain)
                     .disabled(filteredRoutes.isEmpty)
@@ -128,8 +122,7 @@ struct RouteFilterView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
         }
-        .background(Color("Background").opacity(0.9))
-        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+        .background(Color("Background"))
     }
     
     // MARK: - Computed Properties
@@ -243,13 +236,13 @@ struct RouteFilterView: View {
     private func sectionHeader(title: String, count: Int) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-            
+
             Text("(\(count))")
-                .font(.system(size: 14, weight: .medium))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-            
+
             Spacer()
         }
         .padding(.horizontal, 4)
@@ -267,22 +260,11 @@ struct RouteFilterView: View {
     // MARK: - Empty State
     
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "map.slash")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            
-            VStack(spacing: 4) {
-                Text("No Routes Available")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
-                
-                Text("Routes will appear here once loaded")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
+        ContentUnavailableView(
+            "No Routes Available",
+            systemImage: "map.slash",
+            description: Text("Routes will appear here once loaded.")
+        )
         .frame(maxHeight: .infinity)
     }
 }
@@ -324,48 +306,39 @@ struct RouteFilterRow: View {
     }
     
     var body: some View {
-        Button { 
+        Button {
             if isSelectable {
                 onToggle()
             }
         } label: {
             HStack(spacing: 12) {
-                // Route color indicator
-                Circle()
-                    .fill(routeColor.gradient)
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        Text(route.route_short_name)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                    )
-                    .shadow(color: routeColor.opacity(0.3), radius: 4, x: 0, y: 2)
+                RouteIdentityBadge(shortName: route.route_short_name, colorHex: route.route_color)
                     .opacity(isInactive ? 0.6 : 1.0)
-                
+
                 // Route info
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text("Route \(route.route_short_name)")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(isInactive ? .secondary : .primary)
-                        
+
                         if isInactive {
                             Text("(No buses)")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.caption.weight(.medium))
                                 .foregroundStyle(.tertiary)
                         }
                     }
-                    
+
                     Text(route.route_long_name)
-                        .font(.system(size: 13))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                
+
                 Spacer()
-                
+
                 // Favorite button
-                Button { 
+                Button {
                     // Haptic feedback
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
@@ -373,31 +346,33 @@ struct RouteFilterRow: View {
                 } label: {
                     Image(systemName: isFavorited ? "heart.fill" : "heart")
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(isFavorited ? Color.red : Color.gray.opacity(0.5))
+                        .foregroundStyle(isFavorited ? Color("AlertRed") : .secondary)
                         .scaleEffect(isFavorited ? 1.2 : 1.0)
                         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isFavorited)
                 }
                 .buttonStyle(.plain)
-                
+                .accessibilityLabel(isFavorited ? "Remove route \(route.route_short_name) from favorites" : "Add route \(route.route_short_name) to favorites")
+
                 // Toggle indicator
                 Image(systemName: isEnabled ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(isEnabled ? Color.green : Color.gray.opacity(isInactive ? 0.2 : 0.3))
+                    .foregroundStyle(isEnabled ? Color("PrimaryAccent") : Color.secondary.opacity(isInactive ? 0.3 : 0.4))
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isEnabled)
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color("Background").opacity(0.9))
-                    .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isEnabled ? routeColor.opacity(isInactive ? 0.2 : 0.3) : Color.clear, lineWidth: 2)
-            )
+            .appSheetCard(cornerRadius: 14)
+            .overlay {
+                if isEnabled {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(routeColor.opacity(isInactive ? 0.25 : 0.4), lineWidth: 1.5)
+                }
+            }
             .opacity(isInactive ? 0.7 : 1.0)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Route \(route.route_short_name), \(route.route_long_name)\(isInactive ? ", no buses currently active" : "")")
+        .accessibilityHint(isEnabled ? "Double tap to hide this route" : "Double tap to show this route")
+        .accessibilityAddTraits(isEnabled ? .isSelected : [])
     }
 }
 

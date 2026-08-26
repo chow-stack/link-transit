@@ -38,7 +38,6 @@ REQUIRED_FILES = {
     "shapes.txt",
     "stops.txt",
     "stop_times.txt",
-    "calendar.txt",
 }
 
 
@@ -105,13 +104,22 @@ def convert(archive: zipfile.ZipFile) -> dict[str, object]:
     missing = REQUIRED_FILES - archive_files
     if missing:
         raise ValueError(f"GTFS ZIP is missing: {', '.join(sorted(missing))}")
+    if not {"calendar.txt", "calendar_dates.txt"}.intersection(archive_files):
+        raise ValueError("GTFS ZIP must include calendar.txt or calendar_dates.txt")
 
     route_rows = read_table(archive, "routes.txt")
     trip_rows = read_table(archive, "trips.txt")
     shape_rows = read_table(archive, "shapes.txt")
     stop_rows = read_table(archive, "stops.txt")
     stop_time_rows = read_table(archive, "stop_times.txt")
-    calendar_rows = read_table(archive, "calendar.txt")
+    calendar_rows = (
+        read_table(archive, "calendar.txt") if "calendar.txt" in archive_files else []
+    )
+    calendar_date_rows = (
+        read_table(archive, "calendar_dates.txt")
+        if "calendar_dates.txt" in archive_files
+        else []
+    )
 
     routes = [
         {
@@ -173,6 +181,7 @@ def convert(archive: zipfile.ZipFile) -> dict[str, object]:
                 {
                     "s": int(required(row, "stop_id", "stop_times.txt")),
                     "a": arrival_time,
+                    "q": sequence,
                 },
             )
         )
@@ -234,6 +243,33 @@ def convert(archive: zipfile.ZipFile) -> dict[str, object]:
             }
         )
 
+    service_calendar = {
+        "calendars": [
+            {
+                "service_id": required(row, "service_id", "calendar.txt"),
+                **{
+                    weekday: (row.get(weekday) or "0").strip() == "1"
+                    for weekday in WEEKDAYS
+                },
+                "start_date": required(row, "start_date", "calendar.txt"),
+                "end_date": required(row, "end_date", "calendar.txt"),
+            }
+            for row in calendar_rows
+        ],
+        "exceptions": [
+            {
+                "service_id": required(
+                    row, "service_id", "calendar_dates.txt"
+                ),
+                "date": required(row, "date", "calendar_dates.txt"),
+                "exception_type": int(
+                    required(row, "exception_type", "calendar_dates.txt")
+                ),
+            }
+            for row in calendar_date_rows
+        ],
+    }
+
     resources: dict[str, object] = {
         "routes.json": routes,
         "trips.json": trips,
@@ -241,6 +277,7 @@ def convert(archive: zipfile.ZipFile) -> dict[str, object]:
         "stops_optimized.json": stops,
         "stop_times_optimized.json": stop_times,
         "route_service_hours.json": route_service_hours,
+        "service_calendar.json": service_calendar,
     }
     validate(resources)
     return resources
@@ -252,6 +289,7 @@ def validate(resources: dict[str, object]) -> None:
     shapes = resources["shapes.json"]
     stops = resources["stops_optimized.json"]
     stop_times = resources["stop_times_optimized.json"]
+    service_calendar = resources["service_calendar.json"]
 
     route_ids = {row["route_id"] for row in routes}
     trip_ids = {row["trip_id"] for row in trips}
@@ -262,6 +300,13 @@ def validate(resources: dict[str, object]) -> None:
         raise ValueError("Duplicate route_id values")
     if len(trip_ids) != len(trips):
         raise ValueError("Duplicate trip_id values")
+
+    service_ids = {
+        row["service_id"] for row in service_calendar["calendars"]
+    }
+    service_ids.update(
+        row["service_id"] for row in service_calendar["exceptions"]
+    )
 
     unknown_trip_routes = {row["route_id"] for row in trips} - route_ids
     unknown_trip_shapes = {
@@ -279,6 +324,7 @@ def validate(resources: dict[str, object]) -> None:
         "trips without stop times": trips_without_stop_times,
         "stop-time trip IDs": unknown_stop_time_trips,
         "stop-time stop IDs": unknown_stop_ids,
+        "trip service IDs": {row["service_id"] for row in trips} - service_ids,
     }
     messages = [
         f"Unknown {label}: {sorted(values)[:10]}"

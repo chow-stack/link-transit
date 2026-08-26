@@ -7,7 +7,8 @@ struct Trip: Codable, Identifiable, Sendable {
     let shape_id: String?
     let trip_headsign: String
     let direction_id: Int?
-    let block_id: String? // Actual bus/vehicle number
+    /// GTFS operational block assignment. This is not a public vehicle/fleet number.
+    let block_id: String?
     
     var id: String { trip_id }
     

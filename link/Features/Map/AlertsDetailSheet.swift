@@ -45,23 +45,11 @@ struct AlertsDetailSheet: View {
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.green)
-            
-            VStack(spacing: 8) {
-                Text("No Active Alerts")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.primary)
-                
-                Text("All Bloomington Transit services are operating normally")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-        }
+        ContentUnavailableView(
+            "No Active Alerts",
+            systemImage: "checkmark.circle.fill",
+            description: Text("All Bloomington Transit services are operating normally.")
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color("Background"))
     }
@@ -78,98 +66,110 @@ struct AlertRow: View {
     let alert: Alert
     @State private var isExpanded = false
     
+    private var expandAnimation: Animation { .spring(response: 0.4, dampingFraction: 0.78) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(expandAnimation) {
                     isExpanded.toggle()
                 }
             } label: {
                 HStack(spacing: 12) {
                     // Severity icon
                     Image(systemName: alert.severityLevel.icon)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.callout.weight(.bold))
                         .foregroundStyle(severityColor)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 36, height: 36)
                         .background(
                             Circle()
                                 .fill(severityColor.opacity(0.15))
                         )
-                    
+                        .overlay(
+                            Circle()
+                                .stroke(severityColor.opacity(0.25), lineWidth: 1)
+                        )
+
                     // Alert content
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(alert.severityLevel.displayName)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(severityColor)
-                                .textCase(.uppercase)
-                            
-                            Spacer()
-                        }
-                        
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(alert.severityLevel.displayName)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(severityColor)
+                            .textCase(.uppercase)
+                            .tracking(0.4)
+
                         Text(alert.headerText)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.subheadline.weight(.bold))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    
+
+                    Spacer(minLength: 8)
+
                     // Expand/collapse indicator
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
                 .padding(16)
+                .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            
+            .accessibilityLabel("\(alert.severityLevel.displayName) alert, \(alert.headerText)")
+            .accessibilityHint(isExpanded ? "Double tap to hide details" : "Double tap to show details")
+            .accessibilityAddTraits(.isButton)
+
             // Expanded content
             if isExpanded {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     Divider()
+                        .overlay(severityColor.opacity(0.15))
                         .padding(.horizontal, 16)
-                    
+
                     // Description
                     if !alert.descriptionText.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Details")
-                                .font(.system(size: 12, weight: .semibold))
+                            Label("Details", systemImage: "text.alignleft")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
-                            
+
                             Text(alert.descriptionText)
-                                .font(.system(size: 14))
+                                .font(.subheadline)
                                 .foregroundStyle(.primary)
                         }
                         .padding(.horizontal, 16)
                     }
-                    
+
                     // Active periods
                     if !alert.activePeriods.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Active Period")
-                                .font(.system(size: 12, weight: .semibold))
+                            Label("Active period", systemImage: "calendar")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
-                            
+
                             ForEach(Array(alert.activePeriods.enumerated()), id: \.offset) { index, period in
-                                HStack(spacing: 4) {
-                                    Text(formatPeriod(period))
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(.primary)
-                                }
+                                Text(formatPeriod(period))
+                                    .font(.subheadline.weight(.medium))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.primary)
                             }
                         }
                         .padding(.horizontal, 16)
                     }
-                    
+
                     // URL link
                     if let urlString = alert.url, let url = URL(string: urlString) {
                         Link(destination: url) {
                             HStack(spacing: 6) {
-                                Image(systemName: "link")
-                                    .font(.system(size: 12))
-                                Text("More Information")
-                                    .font(.system(size: 14, weight: .medium))
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption.weight(.semibold))
+                                Text("More information")
+                                    .font(.subheadline.weight(.semibold))
                             }
                             .foregroundStyle(Color("PrimaryAccent"))
                             .padding(.horizontal, 16)
@@ -177,17 +177,21 @@ struct AlertRow: View {
                     }
                 }
                 .padding(.bottom, 16)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).combined(with: .move(edge: .top)),
+                        removal: .opacity
+                    )
+                )
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color("Background").opacity(0.8))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(severityColor.opacity(0.2), lineWidth: 1)
-        )
+        .appSheetCard(cornerRadius: 14)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(severityColor.opacity(isExpanded ? 0.4 : 0.2), lineWidth: 1)
+        }
+        .animation(expandAnimation, value: isExpanded)
+        .clipped()
     }
     
     // MARK: - Computed Properties

@@ -74,8 +74,7 @@ class FavoriteStore {
             let descriptor = FetchDescriptor<Favorite>()
             allFavorites = try modelContext.fetch(descriptor)
             revision &+= 1
-            print("✅ Loaded \(allFavorites.count) favorites from storage")
-            
+
             // Auto-disable favorites-only mode if no route favorites remain
             checkAndDisableFavoritesOnlyIfNeeded()
         } catch {
@@ -89,7 +88,6 @@ class FavoriteStore {
     private func checkAndDisableFavoritesOnlyIfNeeded() {
         if showFavoritesOnly && routeFavorites.isEmpty {
             showFavoritesOnly = false
-            print("🔄 Auto-disabled favorites-only mode (no route favorites remaining)")
         }
     }
     
@@ -113,7 +111,6 @@ class FavoriteStore {
             modelContext.insert(favorite)
             try modelContext.save()
             await loadFavorites()
-            print("✅ Added route \(routeId) to favorites")
         } catch {
             print("⚠️ Failed to add route favorite: \(error)")
         }
@@ -138,7 +135,6 @@ class FavoriteStore {
             modelContext.insert(favorite)
             try modelContext.save()
             await loadFavorites()
-            print("✅ Added stop \(stopId) to favorites")
         } catch {
             print("⚠️ Failed to add stop favorite: \(error)")
         }
@@ -168,8 +164,6 @@ class FavoriteStore {
             
             // Check if favorites-only mode should be disabled
             checkAndDisableFavoritesOnlyIfNeeded()
-            
-            print("✅ Removed route \(routeId) from favorites")
         } catch {
             print("⚠️ Failed to remove route favorite: \(error)")
         }
@@ -197,7 +191,6 @@ class FavoriteStore {
             
             try modelContext.save()
             await loadFavorites()
-            print("✅ Removed stop \(stopId) from favorites")
         } catch {
             print("⚠️ Failed to remove stop favorite: \(error)")
         }
@@ -247,8 +240,6 @@ class FavoriteStore {
             if showFavoritesOnly {
                 showFavoritesOnly = false
             }
-            
-            print("✅ Cleared all favorites")
         } catch {
             print("⚠️ Failed to clear favorites: \(error)")
         }

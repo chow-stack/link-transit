@@ -1,0 +1,501 @@
+{
+  "calendars": [
+    {
+      "service_id": "100",
+      "monday": false,
+      "tuesday": false,
+      "wednesday": false,
+      "thursday": false,
+      "friday": false,
+      "saturday": false,
+      "sunday": true,
+      "start_date": "20260823",
+      "end_date": "20270824"
+    },
+    {
+      "service_id": "84",
+      "monday": false,
+      "tuesday": false,
+      "wednesday": false,
+      "thursday": false,
+      "friday": false,
+      "saturday": true,
+      "sunday": false,
+      "start_date": "20260823",
+      "end_date": "20270824"
+    },
+    {
+      "service_id": "Fall_2026-Fr",
+      "monday": false,
+      "tuesday": false,
+      "wednesday": false,
+      "thursday": false,
+      "friday": true,
+      "saturday": false,
+      "sunday": false,
+      "start_date": "20260823",
+      "end_date": "20270824"
+    },
+    {
+      "service_id": "Fall_2026-Mo-Th",
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": false,
+      "saturday": false,
+      "sunday": false,
+      "start_date": "20260823",
+      "end_date": "20270824"
+    },
+    {
+      "service_id": "26",
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": false,
+      "sunday": false,
+      "start_date": "20260823",
+      "end_date": "20270824"
+    }
+  ],
+  "exceptions": [
+    {
+      "service_id": "10",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "11",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "12",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "13",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "14",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "18",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "20",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "22",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "24",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "26",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "Fall_2026-Mo-Th",
+      "date": "20261126",
+      "exception_type": 2
+    },
+    {
+      "service_id": "10",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "11",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "12",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "13",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "14",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "18",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "20",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "22",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "24",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "26",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "86",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "88",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "89",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "90",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "91",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "98",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "99",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "100",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "Fall_2026-Su",
+      "date": "20261224",
+      "exception_type": 1
+    },
+    {
+      "service_id": "Fall_2026-Mo-Th",
+      "date": "20261224",
+      "exception_type": 2
+    },
+    {
+      "service_id": "10",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "11",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "12",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "13",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "14",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "18",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "20",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "22",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "24",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "26",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "41",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "43",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "44",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "47",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "52",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "54",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "56",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "Fall_2026-Fr",
+      "date": "20261225",
+      "exception_type": 2
+    },
+    {
+      "service_id": "10",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "11",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "12",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "13",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "14",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "18",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "20",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "22",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "24",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "26",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "86",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "88",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "89",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "90",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "91",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "98",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "99",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "100",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "Fall_2026-Su",
+      "date": "20261231",
+      "exception_type": 1
+    },
+    {
+      "service_id": "Fall_2026-Mo-Th",
+      "date": "20261231",
+      "exception_type": 2
+    },
+    {
+      "service_id": "10",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "11",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "12",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "13",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "14",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "18",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "20",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "22",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "24",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "26",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "41",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "43",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "44",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "47",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "52",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "54",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "56",
+      "date": "20270101",
+      "exception_type": 2
+    },
+    {
+      "service_id": "Fall_2026-Fr",
+      "date": "20270101",
+      "exception_type": 2
+    }
+  ]
+}

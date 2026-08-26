@@ -1,371 +1,321 @@
 import SwiftUI
 
-/// Bottom sheet displaying live bus information
+/// A live vehicle sheet organized around the rider's next decision: where the
+/// bus is going, its next stop, and the remaining stop sequence.
 struct BusInfoSheet: View {
     let bus: EnrichedVehicle
     let busInfo: BusInfo
     @Environment(\.dismiss) private var dismiss
     @Environment(FavoriteStore.self) private var favoriteStore
-    
+    @State private var showsAllStops = false
+
+    private var visibleStops: [BusInfo.StopInfo] {
+        showsAllStops ? busInfo.upcomingStops : Array(busInfo.upcomingStops.prefix(5))
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Route color bar at top
-                Rectangle()
-                    .fill(bus.routeColor)
-                    .frame(height: 4)
-                
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Header section
-                        busHeader
-                        
-                        Divider()
-                            .padding(.horizontal, 20)
-                        
-                        // Current/Next stop section
-                        currentStopSection
-                        
-                        // Upcoming stops section
-                        if !busInfo.upcomingStops.isEmpty {
-                            upcomingStopsSection
-                        }
-                        
-                        // Last updated timestamp
-                        lastUpdatedSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    nextStopCard
+
+                    if !busInfo.upcomingStops.isEmpty {
+                        upcomingStops
                     }
-                    .padding(.vertical, 16)
+
+                    freshness
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
+            .background(Color("Background"))
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(content: {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { 
-                        // Haptic feedback
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        
-                        Task {
-                            await favoriteStore.toggleRouteFavorite(
-                                routeId: bus.vehicle.routeId,
-                                name: "Route \(bus.routeShortName)",
-                                routeColor: bus.route?.route_color
-                            )
-                        }
-                    } label: {
-                        Image(systemName: favoriteStore.isRouteFavorited(bus.vehicle.routeId) ? "heart.fill" : "heart")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(favoriteStore.isRouteFavorited(bus.vehicle.routeId) ? Color("AlertRed") : .secondary)
-                            .scaleEffect(favoriteStore.isRouteFavorited(bus.vehicle.routeId) ? 1.1 : 1.0)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: favoriteStore.isRouteFavorited(bus.vehicle.routeId))
-                    }
-                }
-                
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { favoriteButton }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.secondary)
-                    }
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("Close bus details")
                 }
-            })
+            }
         }
-        .background(Color("Background"))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
-    
-    // MARK: - UI Components
-    
-    private var busHeader: some View {
-        HStack(spacing: 16) {
-            // Route circle
-            Circle()
-                .fill(bus.routeColor)
-                .frame(width: 48, height: 48)
-                .overlay(
-                    Text(bus.routeShortName)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                )
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(bus.routeLongName)
-                    .font(.system(size: 20, weight: .bold))
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            RouteIdentityBadge(
+                shortName: bus.routeShortName,
+                colorHex: bus.route?.route_color
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("To \(busInfo.destination)")
+                    .font(.headline)
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                
-                Text("Bus #\(busInfo.busNumber)")
-                    .font(.system(size: 16, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Bus \(busInfo.vehicleId)")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Vehicle \(busInfo.vehicleId)")
             }
-            
-            Spacer()
-            
-            // Delay status badge
-            DelayStatusBadge(delayStatus: busInfo.delayStatus)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
     }
-    
-    private var currentStopSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section title
-            HStack(spacing: 8) {
-                Image(systemName: "mappin.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(bus.routeColor)
-                
-                Text(busInfo.atStop ? "At Stop" : "Next Stop")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.secondary)
+
+    @ViewBuilder
+    private var nextStopCard: some View {
+        if let stop = busInfo.currentStop {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label(
+                            busInfo.atStop ? "At stop" : "Next stop",
+                            systemImage: busInfo.atStop ? "bus.fill" : "mappin.circle.fill"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(bus.routeColor)
+
+                        Spacer()
+
+                        if let delay = delayText {
+                            Text(delay)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Text(stop.name)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if busInfo.atStop {
+                        Text("Now")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(bus.routeColor)
+                    } else {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(stop.effectiveArrival, format: .dateTime.hour().minute())
+                                .font(.headline.weight(.bold))
+                                .monospacedDigit()
+                            Spacer()
+                            Text(relativeETA(to: stop.effectiveArrival, now: context.date))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if busInfo.totalStopCount > 1 {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ProgressView(value: completedProgress)
+                                .tint(bus.routeColor)
+                            Text(remainingStopsText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(14)
+                .appSheetCard()
+                .accessibilityElement(children: .combine)
             }
-            .padding(.horizontal, 20)
-            
-            // Current/Next stop card
-            VStack(alignment: .leading, spacing: 8) {
-                Text(busInfo.currentStopName)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
-                
-                if !busInfo.atStop, let eta = busInfo.currentStopETA {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color("PrimaryAccent"))
-                        
-                        Text(eta)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color("PrimaryAccent"))
+        } else {
+            ContentUnavailableView(
+                "Stop progress unavailable",
+                systemImage: "location.slash",
+                description: Text("The vehicle is visible, but its trip progress is not in the current feed.")
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private var upcomingStops: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Upcoming stops")
+                .font(.subheadline.weight(.semibold))
+
+            VStack(spacing: 0) {
+                ForEach(Array(visibleStops.enumerated()), id: \.element.id) { index, stop in
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        UpcomingBusStopRow(
+                            stop: stop,
+                            now: context.date,
+                            tint: bus.routeColor,
+                            isLast: index == visibleStops.count - 1
+                        )
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color("Background").opacity(0.8))
-            )
-            .padding(.horizontal, 20)
-        }
-    }
-    
-    private var upcomingStopsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section title
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                
-                Text("Upcoming Stops")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 20)
-            
-            // Stop list
-            VStack(spacing: 8) {
-                ForEach(Array(busInfo.upcomingStops.enumerated()), id: \.offset) { index, stopInfo in
-                    UpcomingStopRow(
-                        stopName: stopInfo.name,
-                        eta: stopInfo.eta,
-                        isLast: index == busInfo.upcomingStops.count - 1
-                    )
+            .padding(.horizontal, 14)
+            .appSheetCard()
+
+            if busInfo.upcomingStops.count > 5 {
+                Button(showsAllStops ? "Show fewer stops" : "Show all \(busInfo.upcomingStops.count) stops") {
+                    withAnimation(.easeInOut(duration: 0.2)) { showsAllStops.toggle() }
                 }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color("PrimaryAccent"))
             }
-            .padding(.horizontal, 20)
         }
     }
-    
-    private var lastUpdatedSection: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            
-            Text("Updated \(timeAgo(from: bus.lastUpdated))")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+
+    private var freshness: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text("Vehicle updated")
+                Text(busInfo.lastUpdated, style: .relative)
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
     }
-    
-    // MARK: - Helper Methods
-    
-    private func timeAgo(from date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
-        if seconds < 60 {
-            return "just now"
-        } else if seconds < 120 {
-            return "1 min ago"
-        } else if seconds < 3600 {
-            let minutes = seconds / 60
-            return "\(minutes) mins ago"
-        } else {
-            let hours = seconds / 3600
-            return "\(hours)h ago"
+
+    private var favoriteButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task {
+                await favoriteStore.toggleRouteFavorite(
+                    routeId: bus.vehicle.routeId,
+                    name: "Route \(bus.routeShortName)",
+                    routeColor: bus.route?.route_color
+                )
+            }
+        } label: {
+            Image(systemName: favoriteStore.isRouteFavorited(bus.vehicle.routeId) ? "heart.fill" : "heart")
+                .foregroundStyle(favoriteStore.isRouteFavorited(bus.vehicle.routeId) ? Color("AlertRed") : .secondary)
         }
+        .accessibilityLabel(favoriteStore.isRouteFavorited(bus.vehicle.routeId) ? "Remove route from favorites" : "Add route to favorites")
+    }
+
+    private var delayText: String? {
+        guard let delay = busInfo.delayMinutes else { return nil }
+        if delay >= 1 { return "\(delay) min late" }
+        if delay <= -1 { return "\(-delay) min early" }
+        return "On time"
+    }
+
+    private var completedProgress: Double {
+        guard busInfo.totalStopCount > 1 else { return 0 }
+        let completed = busInfo.totalStopCount - busInfo.remainingStopCount
+        return Double(completed) / Double(busInfo.totalStopCount - 1)
+    }
+
+    private var remainingStopsText: String {
+        let count = busInfo.remainingStopCount
+        return count == 1 ? "Final stop" : "\(count) stops remaining"
+    }
+
+    private func relativeETA(to date: Date, now: Date) -> String {
+        let seconds = date.timeIntervalSince(now)
+        if seconds < -60 { return "Timing unavailable" }
+        if seconds < 60 { return "<1 min" }
+        return "\(max(1, Int(ceil(seconds / 60)))) min"
     }
 }
 
-// MARK: - Supporting Components
-
-/// Delay status badge
-struct DelayStatusBadge: View {
-    let delayStatus: DelayStatus
-    
-    var body: some View {
-        Text(delayStatus.displayText)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(textColor)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(backgroundColor)
-            )
-    }
-    
-    private var textColor: Color {
-        switch delayStatus {
-        case .onTime: return .green // Semantic color for success
-        case .early: return Color("PrimaryAccent")
-        case .delayed: return .orange // Semantic color for warning
-        case .unknown: return .secondary
-        }
-    }
-    
-    private var backgroundColor: Color {
-        switch delayStatus {
-        case .onTime: return Color.green.opacity(0.15) // Semantic color for success
-        case .early: return Color("PrimaryAccent").opacity(0.15)
-        case .delayed: return Color.orange.opacity(0.15) // Semantic color for warning
-        case .unknown: return Color("Background").opacity(0.5)
-        }
-    }
-}
-
-/// Individual upcoming stop row
-struct UpcomingStopRow: View {
-    let stopName: String
-    let eta: String?
+private struct UpcomingBusStopRow: View {
+    let stop: BusInfo.StopInfo
+    let now: Date
+    let tint: Color
     let isLast: Bool
-    
+
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Stop indicator with connecting line
+        HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 0) {
-                Circle()
-                    .fill(Color(.systemGray3))
-                    .frame(width: 8, height: 8)
-                
+                Circle().fill(tint).frame(width: 8, height: 8)
                 if !isLast {
-                    Rectangle()
-                        .fill(Color(.systemGray4))
-                        .frame(width: 2, height: 30)
+                    Rectangle().fill(Color("PrimaryAccent").opacity(0.18)).frame(width: 2, height: 34)
                 }
             }
-            .padding(.top, 6)
-            
-            // Stop info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(stopName)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
-                
-                if let eta = eta {
-                    Text(eta)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
+            .padding(.top, 7)
+
+            Text(stop.name)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(stop.effectiveArrival, format: .dateTime.hour().minute())
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                Text(relativeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
         }
+        .padding(.top, 11)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var relativeText: String {
+        let seconds = stop.effectiveArrival.timeIntervalSince(now)
+        if seconds < -60, stop.predictedArrival == nil { return "Timing unavailable" }
+        if seconds < 60 { return "<1 min" }
+        return "\(max(1, Int(ceil(seconds / 60)))) min"
     }
 }
 
-// MARK: - Data Models
-
-/// Bus information including current stop and upcoming stops
 struct BusInfo {
-    let busNumber: String
-    let currentStopName: String
-    let currentStopETA: String?
+    let vehicleId: String
+    let destination: String
+    let currentStop: StopInfo?
     let atStop: Bool
-    let delayStatus: DelayStatus
+    let delayMinutes: Int?
     let upcomingStops: [StopInfo]
-    
-    struct StopInfo {
-        let name: String
-        let eta: String?
-    }
-}
+    let remainingStopCount: Int
+    let totalStopCount: Int
+    let lastUpdated: Date
+    let isRealtimeProgress: Bool
 
-/// Delay status for a bus
-enum DelayStatus {
-    case onTime
-    case early
-    case delayed(minutes: Int)
-    case unknown
-    
-    var displayText: String {
-        switch self {
-        case .onTime: return "On Time"
-        case .early: return "Early"
-        case .delayed(let minutes): return "\(minutes) min late"
-        case .unknown: return "Unknown"
-        }
+    struct StopInfo: Identifiable {
+        let name: String
+        let sequence: Int
+        let scheduledArrival: Date
+        let predictedArrival: Date?
+
+        var id: Int { sequence }
+        var effectiveArrival: Date { predictedArrival ?? scheduledArrival }
     }
 }
 
 #Preview {
-    // Sample bus
-    let sampleVehicle = Vehicle(
-        id: "bus123",
+    let now = Date()
+    let vehicle = Vehicle(
+        id: "2494",
         routeId: "6",
         tripId: "trip123",
         routeName: "6",
         latitude: 39.166595,
         longitude: -86.542137,
-        heading: 45.0,
-        speed: 25.0,
-        lastUpdated: Date()
+        heading: 45,
+        speed: 8,
+        currentStopSequence: 4,
+        currentStatus: .inTransitTo,
+        lastUpdated: now
     )
-    
-    let sampleRoute = Route(
-        route_id: "6",
-        route_short_name: "6",
-        route_long_name: "Campus Loop",
-        route_color: "EC0E0E"
-    )
-    
-    let enrichedBus = EnrichedVehicle(
-        vehicle: sampleVehicle,
-        route: sampleRoute
-    )
-    
-    let busInfo = BusInfo(
-        busNumber: "123",
-        currentStopName: "Kirkwood Ave & Indiana Ave",
-        currentStopETA: "2 min",
+    let route = Route(route_id: "6", route_short_name: "6", route_long_name: "Campus Loop", route_color: "EC0E0E")
+    let current = BusInfo.StopInfo(name: "Kirkwood Ave & Indiana Ave", sequence: 4, scheduledArrival: now.addingTimeInterval(240), predictedArrival: now.addingTimeInterval(300))
+    let info = BusInfo(
+        vehicleId: "2494",
+        destination: "Downtown via Kirkwood",
+        currentStop: current,
         atStop: false,
-        delayStatus: .onTime,
+        delayMinutes: 1,
         upcomingStops: [
-            BusInfo.StopInfo(name: "IMU - Indiana Memorial Union", eta: "5 min"),
-            BusInfo.StopInfo(name: "Sample Gates", eta: "8 min"),
-            BusInfo.StopInfo(name: "Memorial Stadium", eta: "12 min")
-        ]
+            .init(name: "Indiana Memorial Union", sequence: 5, scheduledArrival: now.addingTimeInterval(600), predictedArrival: nil),
+            .init(name: "Sample Gates", sequence: 6, scheduledArrival: now.addingTimeInterval(900), predictedArrival: nil)
+        ],
+        remainingStopCount: 3,
+        totalStopCount: 10,
+        lastUpdated: now,
+        isRealtimeProgress: true
     )
-    
-    BusInfoSheet(bus: enrichedBus, busInfo: busInfo)
+    BusInfoSheet(bus: EnrichedVehicle(vehicle: vehicle, route: route), busInfo: info)
 }
-

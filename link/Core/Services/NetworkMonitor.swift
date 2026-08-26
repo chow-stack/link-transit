@@ -62,13 +62,8 @@ class NetworkMonitor {
                     self.connectionType = nil
                 }
                 
-                // Log status changes for debugging
-                if !wasConnected && self.isConnected {
-                    print("✅ Network reconnected via \(self.connectionType?.description ?? "unknown")")
-                } else if wasConnected && !self.isConnected {
+                if wasConnected && !self.isConnected {
                     print("❌ Network disconnected")
-                } else if self.isConnected {
-                    print("✅ Network connected via \(self.connectionType?.description ?? "unknown")")
                 }
             }
         }

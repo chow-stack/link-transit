@@ -109,8 +109,6 @@ class RouteFilterStore {
 
             // Build set of enabled route IDs
             enabledRouteIds = Set(filters.filter { $0.isEnabled }.map { $0.routeId })
-            
-            print("✅ Loaded \(enabledRouteIds.count) enabled routes from storage")
         } catch {
             print("⚠️ Failed to load route filters: \(error)")
             // Default to all routes enabled

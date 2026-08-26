@@ -1,18 +1,15 @@
-import Foundation
 import CoreLocation
+import Foundation
 
-/// View model for managing bus information and stop sequence
+/// Builds presentation-ready vehicle progress from GTFS-RT first, using
+/// geometry only when the feed does not identify a current stop.
 @MainActor
 struct BusInfoViewModel {
     private let stopTimesService: StopTimesService
-    private let realtimeETAService = RealtimeETAService.shared
     private let tripLookup: [String: Trip]
     private let stopLookup: [Int: Stop]
-    private let firstTripByRouteId: [String: Trip]
-    
-    // Cached trip updates for performance
-    private let tripUpdates: [String: TripUpdate]?
-    
+    private let tripUpdates: [String: TripUpdate]
+
     init(
         stopTimesService: StopTimesService,
         tripLookup: [String: Trip],
@@ -23,340 +20,116 @@ struct BusInfoViewModel {
         self.stopTimesService = stopTimesService
         self.tripLookup = tripLookup
         self.stopLookup = stopLookup
-        self.firstTripByRouteId = firstTripByRouteId
-        self.tripUpdates = tripUpdates
+        self.tripUpdates = tripUpdates ?? [:]
+        _ = firstTripByRouteId // Kept for source compatibility with MapViewModel.
     }
-    
-    /// Get bus info including current stop and upcoming stops
-    func getBusInfo(for bus: EnrichedVehicle) async -> BusInfo? {
-        // Get trip ID from vehicle
-        guard let tripId = getTripId(for: bus) else {
-            print("⚠️ BusInfoViewModel: No trip ID found for bus \(bus.vehicle.id), routeId: \(bus.vehicle.routeId), tripId: \(bus.vehicle.tripId)")
-            return createUnknownBusInfo(for: bus)
+
+    func getBusInfo(for bus: EnrichedVehicle, now: Date = Date()) async -> BusInfo? {
+        let vehicle = bus.vehicle
+        guard !vehicle.tripId.isEmpty,
+              let trip = tripLookup[vehicle.tripId] else {
+            return unavailableInfo(for: bus)
         }
-        
-        // Get trip details
-        guard let trip = tripLookup[tripId] else {
-            print("⚠️ BusInfoViewModel: Trip \(tripId) not found in lookup for bus \(bus.vehicle.id)")
-            return createUnknownBusInfo(for: bus)
-        }
-        
-        print("✅ BusInfoViewModel: Found trip \(tripId) for bus \(bus.vehicle.id) on route \(trip.route_id)")
-        
-        // Get stop sequence for this trip
-        let stopSequence = stopTimesService.getStopSequence(for: tripId)
-        
-        guard !stopSequence.isEmpty else {
-            print("⚠️ BusInfoViewModel: No stop sequence found for trip \(tripId)")
-            return createUnknownBusInfo(for: bus)
-        }
-        
-        print("✅ BusInfoViewModel: Found \(stopSequence.count) stops in sequence for trip \(tripId)")
-        
-        // Find current/next stop based on bus position
-        let (currentStopIndex, atStop) = findCurrentStop(
-            busCoordinate: bus.coordinate,
-            stopSequence: stopSequence
+
+        let update = tripUpdates[vehicle.tripId]
+        let sequence = stopTimesService.getTripStopSchedule(
+            for: vehicle.tripId,
+            serviceDateKey: update?.serviceDate ?? vehicle.serviceDateKey,
+            now: now
         )
-        
-        guard currentStopIndex < stopSequence.count else {
-            return createUnknownBusInfo(for: bus)
-        }
-        
-        let currentStopEntry = stopSequence[currentStopIndex]
-        
-        guard let currentStop = stopLookup[currentStopEntry.stopId] else {
-            return createUnknownBusInfo(for: bus)
-        }
-        
-        // Use cached trip updates if available
-        let tripUpdates = self.tripUpdates
-        
-        // Calculate ETA to current/next stop
-        let currentStopETA = atStop ? nil : await calculateETA(
-            to: currentStop,
-            from: bus,
-            arrivalTime: currentStopEntry.arrivalTime,
-            tripId: tripId,
-            tripUpdates: tripUpdates
+        guard !sequence.isEmpty else { return unavailableInfo(for: bus) }
+
+        let progress = resolveProgress(
+            vehicle: vehicle,
+            sequence: sequence,
+            tripUpdate: update,
+            now: now
         )
-        
-        // Get upcoming stops (next 2-3 stops)
-        var upcomingStops: [BusInfo.StopInfo] = []
-        let upcomingRange = min(currentStopIndex + 1, stopSequence.count)..<min(currentStopIndex + 4, stopSequence.count)
-        
-        for index in upcomingRange {
-            let stopEntry = stopSequence[index]
-            guard let stop = stopLookup[stopEntry.stopId] else { continue }
-            
-            let eta = await calculateETA(
-                to: stop,
-                from: bus,
-                arrivalTime: stopEntry.arrivalTime,
-                tripId: tripId,
-                tripUpdates: tripUpdates
+        guard sequence.indices.contains(progress.index) else { return unavailableInfo(for: bus) }
+
+        let stopInfos = sequence.enumerated().compactMap { index, entry -> BusInfo.StopInfo? in
+            guard index >= progress.index, let stop = stopLookup[entry.stopId] else { return nil }
+            let realtime = update?.stopTimeUpdates.first(where: {
+                $0.stopId == entry.stopId && !$0.isSkipped
+            })?.arrivalTime
+            return BusInfo.StopInfo(
+                name: stop.name,
+                sequence: entry.sequence,
+                scheduledArrival: entry.scheduledArrival,
+                predictedArrival: realtime
             )
-            
-            upcomingStops.append(BusInfo.StopInfo(name: stop.name, eta: eta))
         }
-        
-        // Calculate delay status
-        let delayStatus = calculateDelayStatus(
-            tripId: tripId,
-            stopId: currentStop.id,
-            scheduledTime: currentStopEntry.arrivalTime,
-            tripUpdates: tripUpdates
-        )
-        
-        // Get bus number from trip block_id or vehicle ID
-        let busNumber = trip.block_id ?? bus.vehicle.id
-        
+
+        guard let current = stopInfos.first else { return unavailableInfo(for: bus) }
+        let delayMinutes = current.predictedArrival.map {
+            Int(($0.timeIntervalSince(current.scheduledArrival) / 60).rounded())
+        }
+
         return BusInfo(
-            busNumber: busNumber,
-            currentStopName: currentStop.name,
-            currentStopETA: currentStopETA,
-            atStop: atStop,
-            delayStatus: delayStatus,
-            upcomingStops: upcomingStops
+            vehicleId: vehicle.id,
+            destination: trip.trip_headsign.isEmpty ? bus.routeLongName : trip.trip_headsign,
+            currentStop: current,
+            atStop: progress.atStop,
+            delayMinutes: delayMinutes,
+            upcomingStops: Array(stopInfos.dropFirst()),
+            remainingStopCount: stopInfos.count,
+            totalStopCount: sequence.count,
+            lastUpdated: vehicle.lastUpdated,
+            isRealtimeProgress: progress.isRealtime
         )
     }
-    
-    // MARK: - Helper Methods
-    
-    /// Get trip ID from vehicle
-    private func getTripId(for bus: EnrichedVehicle) -> String? {
-        // Use the tripId field directly from the vehicle
-        if !bus.vehicle.tripId.isEmpty {
-            return bus.vehicle.tripId
+
+    private func resolveProgress(
+        vehicle: Vehicle,
+        sequence: [TripStopSchedule],
+        tripUpdate: TripUpdate?,
+        now: Date
+    ) -> (index: Int, atStop: Bool, isRealtime: Bool) {
+        if let feedSequence = vehicle.currentStopSequence,
+           let index = sequence.firstIndex(where: { $0.sequence == feedSequence }) {
+            return (index, vehicle.currentStatus == .stoppedAt, true)
         }
-        
-        // Fallback: if no tripId, try to find a trip for this route
-        if !bus.vehicle.routeId.isEmpty {
-            if let trip = firstTripByRouteId[bus.vehicle.routeId] {
-                return trip.trip_id
-            }
+
+        if let currentStopId = vehicle.currentStopId,
+           let index = sequence.firstIndex(where: { $0.stopId == currentStopId }) {
+            return (index, vehicle.currentStatus == .stoppedAt, true)
         }
-        
-        return nil
+
+        if let nextUpdate = tripUpdate?.stopTimeUpdates.first(where: {
+            !$0.isSkipped && ($0.arrivalTime ?? .distantPast) >= now.addingTimeInterval(-300)
+        }), let index = sequence.firstIndex(where: { $0.stopId == nextUpdate.stopId }) {
+            return (index, false, true)
+        }
+
+        return geometryFallback(vehicle: vehicle, sequence: sequence)
     }
-    
-    /// Find current/next stop based on bus position
-    private func findCurrentStop(
-        busCoordinate: CLLocationCoordinate2D,
-        stopSequence: [(stopId: Int, arrivalTime: String)]
-    ) -> (index: Int, atStop: Bool) {
-        let busLocation = CLLocation(latitude: busCoordinate.latitude, longitude: busCoordinate.longitude)
-        
-        var closestStopIndex = 0
-        var minimumDistance = Double.infinity
-        
-        // Find closest stop to bus
-        for (index, stopEntry) in stopSequence.enumerated() {
-            guard let stop = stopLookup[stopEntry.stopId] else { continue }
-            
-            let stopLocation = CLLocation(latitude: stop.lat, longitude: stop.lon)
-            let distance = busLocation.distance(from: stopLocation)
-            
-            if distance < minimumDistance {
-                minimumDistance = distance
-                closestStopIndex = index
-            }
-        }
-        
-        // Consider "at stop" if within 30 meters (reduced from 50m for better accuracy)
-        let atStop = minimumDistance < 30.0
-        
-        // If not at stop, determine if we should advance to next stop
-        if !atStop && closestStopIndex < stopSequence.count - 1 {
-            // Check if bus has passed this stop by looking at the direction
-            // We'll use a simple heuristic: if the bus is closer to the next stop than current,
-            // and the next stop is further along the route, advance to next stop
-            
-            let currentStop = stopLookup[stopSequence[closestStopIndex].stopId]!
-            let nextStop = stopLookup[stopSequence[closestStopIndex + 1].stopId]!
-            
-            let currentStopLocation = CLLocation(latitude: currentStop.lat, longitude: currentStop.lon)
-            let nextStopLocation = CLLocation(latitude: nextStop.lat, longitude: nextStop.lon)
-            
-            let distanceToCurrent = busLocation.distance(from: currentStopLocation)
-            let distanceToNext = busLocation.distance(from: nextStopLocation)
-            
-            // If bus is significantly closer to next stop, advance
-            if distanceToNext < distanceToCurrent - 20.0 { // 20m threshold
-                return (closestStopIndex + 1, false)
-            }
-        }
-        
-        return (closestStopIndex, atStop)
+
+    private func geometryFallback(
+        vehicle: Vehicle,
+        sequence: [TripStopSchedule]
+    ) -> (index: Int, atStop: Bool, isRealtime: Bool) {
+        let vehicleLocation = CLLocation(latitude: vehicle.latitude, longitude: vehicle.longitude)
+        let nearest = sequence.enumerated().compactMap { index, entry -> (Int, CLLocationDistance)? in
+            guard let stop = stopLookup[entry.stopId] else { return nil }
+            let location = CLLocation(latitude: stop.lat, longitude: stop.lon)
+            return (index, vehicleLocation.distance(from: location))
+        }.min { $0.1 < $1.1 }
+        guard let nearest else { return (0, false, false) }
+        return (nearest.0, nearest.1 <= 30, false)
     }
-    
-    /// Calculate ETA to a stop
-    private func calculateETA(
-        to stop: Stop,
-        from bus: EnrichedVehicle,
-        arrivalTime: String,
-        tripId: String,
-        tripUpdates: [String: TripUpdate]?
-    ) async -> String? {
-        // Try to get real-time ETA first
-        if tripUpdates?[tripId] != nil,
-           let realtimeETA = await realtimeETAService.getRealtimeETA(
-               tripId: tripId,
-               stopId: stop.id,
-               tripUpdates: tripUpdates ?? [:]
-           ) {
-            print("✅ BusInfoViewModel: Using real-time ETA for stop \(stop.id)")
-            return formatETA(to: realtimeETA)
-        }
-        
-        // Fallback: estimate based on distance and speed
-        if let speed = bus.vehicle.speed, speed > 0 {
-            let busLocation = CLLocation(
-                latitude: bus.vehicle.latitude,
-                longitude: bus.vehicle.longitude
-            )
-            let stopLocation = CLLocation(latitude: stop.lat, longitude: stop.lon)
-            let distance = busLocation.distance(from: stopLocation) // meters
-            
-            // Convert speed from m/s to km/h for more accurate estimation
-            let speedKmh = speed * 3.6
-            let timeInHours = (distance / 1000.0) / speedKmh
-            let timeInMinutes = Int(timeInHours * 60)
-            
-            // Add buffer for stops (30 seconds per intermediate stop estimate)
-            let adjustedMinutes = timeInMinutes + 1
-            
-            print("✅ BusInfoViewModel: Using speed-based ETA for stop \(stop.id): \(max(1, adjustedMinutes)) min")
-            return "\(max(1, adjustedMinutes)) min"
-        }
-        
-        // Fallback: use scheduled time if available
-        if let scheduledETA = parseScheduledETA(arrivalTime) {
-            print("✅ BusInfoViewModel: Using scheduled ETA for stop \(stop.id): \(scheduledETA)")
-            return scheduledETA
-        }
-        
-        print("⚠️ BusInfoViewModel: No ETA available for stop \(stop.id)")
-        return nil
-    }
-    
-    /// Format ETA from date
-    private func formatETA(to date: Date) -> String {
-        let seconds = date.timeIntervalSince(Date())
-        
-        if seconds < 0 {
-            return "Arriving"
-        } else if seconds < 60 {
-            return "under 1 min"
-        } else if seconds < 3600 {
-            let minutes = Int(seconds / 60)
-            return "\(minutes) min"
-        } else {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            return formatter.string(from: date)
-        }
-    }
-    
-    /// Calculate delay status
-    private func calculateDelayStatus(
-        tripId: String,
-        stopId: Int,
-        scheduledTime: String,
-        tripUpdates: [String: TripUpdate]?
-    ) -> DelayStatus {
-        // Try to get real-time delay status first
-        if let tripUpdate = tripUpdates?[tripId],
-           let stopUpdate = tripUpdate.stopTimeUpdates.first(where: { $0.stopId == stopId }),
-           let arrivalTime = stopUpdate.arrivalTime {
-            
-            // Parse scheduled time and calculate delay
-            let calendar = Calendar.current
-            let todayComponents = calendar.dateComponents([.year, .month, .day], from: Date())
-            
-            guard let scheduledDate = parseArrivalTime(scheduledTime, baseComponents: todayComponents) else {
-                return .unknown
-            }
-            
-            // Calculate delay in seconds
-            let delaySeconds = arrivalTime.timeIntervalSince(scheduledDate)
-            
-            if abs(delaySeconds) < 60 {
-                return .onTime
-            } else if delaySeconds < 0 {
-                return .early
-            } else {
-                let delayMinutes = Int(delaySeconds / 60)
-                return .delayed(minutes: delayMinutes)
-            }
-        }
-        
-        // Fallback: assume on-time if we have scheduled data but no real-time updates
-        print("⚠️ BusInfoViewModel: No real-time delay data for stop \(stopId), assuming on-time")
-        return .onTime
-    }
-    
-    /// Create unknown bus info when data is unavailable
-    private func createUnknownBusInfo(for bus: EnrichedVehicle) -> BusInfo {
-        return BusInfo(
-            busNumber: bus.vehicle.id,
-            currentStopName: "Location unavailable",
-            currentStopETA: nil,
+
+    private func unavailableInfo(for bus: EnrichedVehicle) -> BusInfo {
+        BusInfo(
+            vehicleId: bus.vehicle.id,
+            destination: bus.routeLongName,
+            currentStop: nil,
             atStop: false,
-            delayStatus: .unknown,
-            upcomingStops: []
+            delayMinutes: nil,
+            upcomingStops: [],
+            remainingStopCount: 0,
+            totalStopCount: 0,
+            lastUpdated: bus.vehicle.lastUpdated,
+            isRealtimeProgress: false
         )
-    }
-    
-    /// Parse GTFS time format (HH:mm:ss) to Date
-    private func parseArrivalTime(_ timeString: String, baseComponents: DateComponents) -> Date? {
-        let timeComponents = timeString.split(separator: ":")
-        guard timeComponents.count == 3,
-              let hours = Int(timeComponents[0]),
-              let minutes = Int(timeComponents[1]),
-              let seconds = Int(timeComponents[2]) else {
-            return nil
-        }
-        
-        var dateComponents = baseComponents
-        dateComponents.hour = hours
-        dateComponents.minute = minutes
-        dateComponents.second = seconds
-        
-        // Handle times that exceed 24 hours (e.g., "25:00:00")
-        if hours >= 24 {
-            dateComponents.hour = hours - 24
-            let calendar = Calendar.current
-            if let baseDate = calendar.date(from: baseComponents) {
-                return calendar.date(byAdding: .day, value: 1, to: calendar.date(from: dateComponents) ?? baseDate)
-            }
-        }
-        
-        return Calendar.current.date(from: dateComponents)
-    }
-    
-    /// Parse scheduled arrival time and return formatted ETA
-    private func parseScheduledETA(_ arrivalTime: String) -> String? {
-        let calendar = Calendar.current
-        let todayComponents = calendar.dateComponents([.year, .month, .day], from: Date())
-        
-        guard let scheduledDate = parseArrivalTime(arrivalTime, baseComponents: todayComponents) else {
-            return nil
-        }
-        
-        let seconds = scheduledDate.timeIntervalSince(Date())
-        
-        if seconds < 0 {
-            return "Departed"
-        } else if seconds < 60 {
-            return "under 1 min"
-        } else if seconds < 3600 {
-            let minutes = Int(seconds / 60)
-            return "\(minutes) min"
-        } else {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            return formatter.string(from: scheduledDate)
-        }
     }
 }
